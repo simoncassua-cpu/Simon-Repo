@@ -1,6 +1,6 @@
 {
-  "name": "GeoBuild Vision",
-  "description": "Plataforma de análise inteligente de terrenos para construção civil utilizando Inteligência Artificial, geolocalização e visão computacional.",
-  "requestFramePermissions": ["geolocation", "camera"],
+  "name": "Colégio Exemplar",
+  "description": "Portal Pedagógico e Tecnológico do Colégio Exemplar, integrando boletim escolar, matrículas e central do desenvolvedor.",
+  "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

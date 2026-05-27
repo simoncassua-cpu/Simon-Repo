@@ -1,151 +1,229 @@
 import express from "express";
 import path from "path";
 import { createServer as createViteServer } from "vite";
-import { GoogleGenAI, Type } from "@google/genai";
 import * as dotenv from "dotenv";
 import PDFDocument from "pdfkit";
+import { Packer } from "docx";
+import { generateTechnicalReportDocx } from "./src/utils/docxReport";
 
 dotenv.config();
 
 const app = express();
 const PORT = 3000;
 
-// Configurar limites razoáveis para uploads em base64
 app.use(express.json({ limit: "20mb" }));
 app.use(express.urlencoded({ extended: true, limit: "20mb" }));
 
-// Mock in-memory Database de análises e usuários
+// ========================== MOCK DATABASE ESCOLAR ==========================
+
 const usersDb: any[] = [
   {
-    id: "user-1",
-    name: "Eng. Gabriel Silva",
+    id: "user-admin",
+    name: "Coord. Gabriel Silva",
     email: "simoncassua@gmail.com",
     phone: "+55 (11) 98888-7777",
-    password: "123", // senha simples na simulação
+    password: "123",
+    role: "admin",
+    created_at: new Date().toISOString()
+  },
+  {
+    id: "user-teacher",
+    name: "Prof. Marcos Oliveira",
+    email: "professor@exemplar.com",
+    phone: "+55 (11) 97777-6666",
+    password: "123",
+    role: "teacher",
+    created_at: new Date().toISOString()
+  },
+  {
+    id: "user-student",
+    name: "Ricardo Cassua",
+    email: "aluno@exemplar.com",
+    phone: "+55 (11) 96666-5555",
+    password: "123",
+    role: "student",
     created_at: new Date().toISOString()
   }
 ];
 
-const analysesDb: any[] = [
+const classesDb: any[] = [
+  { id: "turma-3a", nome: "3º Ano EM - Turma A", anoLetivo: "2026", periodo: "Matutino", sala: "Sala 204" },
+  { id: "turma-9b", nome: "9º Ano EF - Turma B", anoLetivo: "2026", periodo: "Vespertino", sala: "Sala 105" }
+];
+
+const studentsDb: any[] = [
   {
-    id: "analysis-preset-1",
-    user_id: "user-1",
-    image_url: "https://images.unsplash.com/photo-1590069261209-f8e9b8642343?auto=format&fit=crop&w=800&q=80", // Terreno plano seco
-    latitude: -23.5505,
-    longitude: -46.6333,
-    score: 95,
-    classification: "Alta",
-    slope: "Plano",
-    soil_type: "Seco / Arenoso",
-    soil_firmness: "Firme",
-    erosion: "Ausente",
-    water_accumulation: "Sem Água",
-    vegetation: "Limpo / Rasteiro",
-    obstacles: "Ausente / Poucos",
-    accessibility: "Boa Acessibilidade",
-    scores: {
-      slope: 20,
-      soil: 25,
-      erosion: 20,
-      water: 15,
-      accessibility: 10,
-      obstacles: 10
-    },
-    recommendations: [
-      "Terreno excelente para assentamento de sapatas simples diretas.",
-      "Excelente acessibilidade local para maquinário pesado, reduzindo custos de logística.",
-      "Revestimento herbáceo limpo, dispensando licenças complexas de supressão vegetal."
-    ],
-    created_at: new Date(Date.now() - 3600000 * 2).toISOString()
+    id: "aluno-1",
+    matricula: "MAT-202601",
+    nome: "Ricardo Cassua",
+    email: "aluno@exemplar.com",
+    cpf: "123.456.789-00",
+    dataNascimento: "2008-05-14",
+    turmaId: "turma-3a",
+    nomeResponsavel: "Simon Cassua",
+    contatoResponsavel: "simoncassua@gmail.com",
+    situacao: "Ativo"
   },
   {
-    id: "analysis-preset-2",
-    user_id: "user-1",
-    image_url: "https://images.unsplash.com/photo-1500382017468-9049fed747ef?auto=format&fit=crop&w=800&q=80", // Terreno inclinado
-    latitude: -22.9068,
-    longitude: -43.1729,
-    score: 65,
-    classification: "Moderada",
-    slope: "Inclinado",
-    soil_type: "Argiloso / Úmido",
-    soil_firmness: "Firme",
-    erosion: "Ausente",
-    water_accumulation: "Umidade Alta",
-    vegetation: "Média",
-    obstacles: "Moderados",
-    accessibility: "Acesso Limitado",
-    scores: {
-      slope: 10,
-      soil: 25,
-      erosion: 20,
-      water: 5,
-      accessibility: 5,
-      obstacles: 10
-    },
-    recommendations: [
-      "Declividade relevante constatada. Executar serviços de terraplanagem com corte e compensação.",
-      "Tratamento impermeabilizante em vigas baldrame contra umidade capilar ascendente.",
-      "Planejar rampas de escalonamento para o trânsito seguro do maquinário de perfuração."
-    ],
-    created_at: new Date(Date.now() - 3600000 * 24).toISOString()
+    id: "aluno-2",
+    matricula: "MAT-202602",
+    nome: "Ana Beatriz Souza",
+    email: "anabeatriz@exemplar.com",
+    cpf: "234.567.890-11",
+    dataNascimento: "2009-11-20",
+    turmaId: "turma-3a",
+    nomeResponsavel: "Carla Souza",
+    contatoResponsavel: "carla.souza@gmail.com",
+    situacao: "Ativo"
   },
   {
-    id: "analysis-preset-3",
-    user_id: "user-1",
-    image_url: "https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?auto=format&fit=crop&w=800&q=80", // Montanha rochosa obstaculizada
-    latitude: -15.7938,
-    longitude: -47.8828,
-    score: 35,
-    classification: "Inadequado",
-    slope: "Muito Íngreme",
-    soil_type: "Rochoso / Instável",
-    soil_firmness: "Instável / Macio",
-    erosion: "Moderada",
-    water_accumulation: "Acúmulo Grave",
-    vegetation: "Excessiva / Florestal",
-    obstacles: "Grandes Obstáculos",
-    accessibility: "Sem Acesso",
-    scores: {
-      slope: 0,
-      soil: 10,
-      erosion: 10,
-      water: 0,
-      accessibility: 0,
-      obstacles: 5
-    },
-    recommendations: [
-      "Elevadíssimo risco geológico de deslizamento lateral. Requer estruturas severas de arrimo.",
-      "O lençol freático está extremamente superficial. Impõe rebaixamento ativo por bombeamento continuo.",
-      "Licitação ambiental complexa obrigatória para desmatamento e remoção de matacões rochosos."
-    ],
-    created_at: new Date(Date.now() - 3600000 * 36).toISOString()
+    id: "aluno-3",
+    matricula: "MAT-202603",
+    nome: "Guilherme Santos",
+    email: "guilherme.santos@gmail.com",
+    cpf: "345.678.901-22",
+    dataNascimento: "2008-02-28",
+    turmaId: "turma-3a",
+    nomeResponsavel: "Jose Santos",
+    contatoResponsavel: "jose.santos@gmail.com",
+    situacao: "Ativo"
   }
 ];
 
-// Helper para instanciar a API do Gemini com Lazy Loading seguro
-let geminiClient: GoogleGenAI | null = null;
-function getGemini(): GoogleGenAI | null {
-  if (!geminiClient) {
-    const key = process.env.GEMINI_API_KEY;
-    if (key && key !== "MY_GEMINI_API_KEY" && key.trim() !== "") {
-      geminiClient = new GoogleGenAI({
-        apiKey: key,
-        httpOptions: {
-          headers: {
-            "User-Agent": "aistudio-build",
-          }
-        }
-      });
-    }
+const teachersDb: any[] = [
+  { id: "prof-1", nome: "Prof. Marcos Oliveira", email: "professor@exemplar.com", disciplina: "Língua Portuguesa", telefone: "+55 (11) 91111-1111", cargaHoraria: 40 },
+  { id: "prof-2", nome: "Prof. Eliane Costa", email: "eliane.costa@exemplar.com", disciplina: "Matemática", telefone: "+55 (11) 92222-2222", cargaHoraria: 32 },
+  { id: "prof-3", nome: "Prof. Roberto Mendes", email: "roberto.mendes@exemplar.com", disciplina: "História", telefone: "+55 (11) 93333-3333", cargaHoraria: 24 }
+];
+
+const disciplinesDb: any[] = [
+  { id: "disc-pt", nome: "Língua Portuguesa", professorId: "prof-1" },
+  { id: "disc-mat", nome: "Matemática", professorId: "prof-2" },
+  { id: "disc-hist", nome: "História", professorId: "prof-3" },
+  { id: "disc-fis", nome: "Física", professorId: "prof-2" }
+];
+
+// Lançamento de notas simuladas
+let gradeRecordsDb: any[] = [
+  { id: "nota-1", alunoId: "aluno-1", disciplinaId: "disc-pt", periodo: "Bimestre 1", notaAvaliadora1: 8.5, notaAvaliadora2: 9.0, notaProjeto: 9.5, notaFinal: 9.0, totalFaltas: 2 },
+  { id: "nota-2", alunoId: "aluno-1", disciplinaId: "disc-pt", periodo: "Bimestre 2", notaAvaliadora1: 7.0, notaAvaliadora2: 8.0, notaProjeto: 9.0, notaFinal: 8.0, totalFaltas: 3 },
+  { id: "nota-3", alunoId: "aluno-1", disciplinaId: "disc-pt", periodo: "Bimestre 3", notaAvaliadora1: 9.0, notaAvaliadora2: 8.5, notaProjeto: 10.0, notaFinal: 9.1, totalFaltas: 1 },
+  { id: "nota-4", alunoId: "aluno-1", disciplinaId: "disc-pt", periodo: "Bimestre 4", notaAvaliadora1: 8.0, notaAvaliadora2: 9.0, notaProjeto: 9.5, notaFinal: 8.8, totalFaltas: 0 },
+  
+  { id: "nota-5", alunoId: "aluno-1", disciplinaId: "disc-mat", periodo: "Bimestre 1", notaAvaliadora1: 9.5, notaAvaliadora2: 10.0, notaProjeto: 9.0, notaFinal: 9.6, totalFaltas: 4 },
+  { id: "nota-6", alunoId: "aluno-1", disciplinaId: "disc-mat", periodo: "Bimestre 2", notaAvaliadora1: 6.5, notaAvaliadora2: 8.0, notaProjeto: 8.5, notaFinal: 7.7, totalFaltas: 2 },
+  { id: "nota-7", alunoId: "aluno-1", disciplinaId: "disc-mat", periodo: "Bimestre 3", notaAvaliadora1: 8.0, notaAvaliadora2: 8.0, notaProjeto: 9.0, notaFinal: 8.3, totalFaltas: 1 },
+  { id: "nota-8", alunoId: "aluno-1", disciplinaId: "disc-mat", periodo: "Bimestre 4", notaAvaliadora1: 9.0, notaAvaliadora2: 9.5, notaProjeto: 9.5, notaFinal: 9.3, totalFaltas: 0 },
+
+  { id: "nota-9", alunoId: "aluno-1", disciplinaId: "disc-hist", periodo: "Bimestre 1", notaAvaliadora1: 7.0, notaAvaliadora2: 7.5, notaProjeto: 8.0, notaFinal: 7.5, totalFaltas: 0 },
+  { id: "nota-10", alunoId: "aluno-1", disciplinaId: "disc-hist", periodo: "Bimestre 2", notaAvaliadora1: 8.5, notaAvaliadora2: 9.0, notaProjeto: 9.0, notaFinal: 8.8, totalFaltas: 1 },
+  { id: "nota-11", alunoId: "aluno-1", disciplinaId: "disc-hist", periodo: "Bimestre 3", notaAvaliadora1: 6.0, notaAvaliadora2: 7.0, notaProjeto: 8.0, notaFinal: 7.0, totalFaltas: 2 },
+  { id: "nota-12", alunoId: "aluno-1", disciplinaId: "disc-hist", periodo: "Bimestre 4", notaAvaliadora1: 9.0, notaAvaliadora2: 8.5, notaProjeto: 9.5, notaFinal: 9.0, totalFaltas: 1 },
+
+  { id: "nota-13", alunoId: "aluno-2", disciplinaId: "disc-pt", periodo: "Bimestre 1", notaAvaliadora1: 6.0, notaAvaliadora2: 7.0, notaProjeto: 7.5, notaFinal: 6.8, totalFaltas: 3 },
+  { id: "nota-14", alunoId: "aluno-2", disciplinaId: "disc-mat", periodo: "Bimestre 1", notaAvaliadora1: 5.5, notaAvaliadora2: 6.0, notaProjeto: 7.0, notaFinal: 6.1, totalFaltas: 5 },
+  { id: "nota-15", alunoId: "aluno-3", disciplinaId: "disc-pt", periodo: "Bimestre 1", notaAvaliadora1: 9.0, notaAvaliadora2: 9.5, notaProjeto: 10.0, notaFinal: 9.5, totalFaltas: 1 },
+  { id: "nota-16", alunoId: "aluno-3", disciplinaId: "disc-mat", periodo: "Bimestre 1", notaAvaliadora1: 4.0, notaAvaliadora2: 4.5, notaProjeto: 6.0, notaFinal: 4.8, totalFaltas: 6 }
+];
+
+const noticesDb: any[] = [
+  {
+    id: "not-1",
+    titulo: "Inscrições Abertas para a Olimpíada de Programação",
+    conteudo: "Estão abertas as inscrições para a 5ª Olimpíada de Programação e Tecnologia do Colégio Exemplar. Podem participar alunos do 9º ano EF ao 3º ano EM. Prêmios incluem tablets e bolsas de estudos adicionais.",
+    data: "2026-05-20T08:00:00Z",
+    destinatario: "Alunos",
+    autor: "Coord. Gabriel Silva",
+    categoria: "Pedagógico"
+  },
+  {
+    id: "not-2",
+    titulo: "Reunião de Pais e Mestres do 2º Bimestre",
+    conteudo: "Prezados de responsabilidade, convidamos para a nossa Reunião de Planejamento e Entrega de Notas do 2º Bimestre, que será realizada no Auditório Principal no dia 30/05, às 19h00.",
+    data: "2026-05-24T14:30:00Z",
+    destinatario: "Responsáveis",
+    autor: "Direção Pedagógica",
+    categoria: "Geral"
+  },
+  {
+    id: "not-3",
+    titulo: "Lançamento do Novo Portal Digital Escolar",
+    conteudo: "Sejam bem-vindos ao novo Portal Digital do Colégio Exemplar! Uma solução tecnológica integrada e veloz desenvolvida para facilitar o fluxo acadêmico e visualização de notas em tempo real.",
+    data: "2026-05-27T10:00:00Z",
+    destinatario: "Todos",
+    autor: "Coord. de Tecnologia",
+    categoria: "Geral"
   }
-  return geminiClient;
+];
+
+// Helper para compilar boletim completo estrutural
+function getBoletimCompleto(alunoId: string) {
+  const aluno = studentsDb.find(a => a.id === alunoId);
+  if (!aluno) return null;
+  const turma = classesDb.find(t => t.id === aluno.turmaId);
+
+  const list: any[] = [];
+  let gpaSoma = 0;
+  let totalAnualFaltas = 0;
+
+  for (const disc of disciplinesDb) {
+    const prof = teachersDb.find(p => p.id === disc.professorId);
+    const bimestres: any = {};
+    const notasDisc = gradeRecordsDb.filter(g => g.alunoId === alunoId && g.disciplinaId === disc.id);
+
+    let somaMedias = 0;
+    let totalFaltasDisc = 0;
+    const bimestresNomes = ["Bimestre 1", "Bimestre 2", "Bimestre 3", "Bimestre 4"];
+
+    for (const b of bimestresNomes) {
+      const g = notasDisc.find(item => item.periodo === b);
+      if (g) {
+        bimestres[b] = {
+          n1: g.notaAvaliadora1,
+          n2: g.notaAvaliadora2,
+          proj: g.notaProjeto,
+          media: g.notaFinal,
+          faltas: g.totalFaltas
+        };
+        somaMedias += g.notaFinal;
+        totalFaltasDisc += g.totalFaltas;
+      } else {
+        bimestres[b] = { n1: 0, n2: 0, proj: 0, media: 0, faltas: 0 };
+      }
+    }
+
+    const mFinal = notasDisc.length > 0 ? parseFloat((somaMedias / notasDisc.length).toFixed(1)) : 0;
+    gpaSoma += mFinal;
+    totalAnualFaltas += totalFaltasDisc;
+
+    list.push({
+      disciplinaNome: disc.nome,
+      professorNome: prof ? prof.nome : "A Designar",
+      bimestres,
+      mediaFinalAno: mFinal,
+      faltasTotaisAno: totalFaltasDisc,
+      resultado: mFinal >= 7.0 ? "Aprovado" : mFinal >= 5.0 ? "Recuperação" : "Reprovado"
+    });
+  }
+
+  const mediaGeral = list.length > 0 ? parseFloat((gpaSoma / list.length).toFixed(1)) : 0;
+  const statusGeral = mediaGeral >= 7.0 && totalAnualFaltas <= 20 ? "Aprovado" : mediaGeral >= 5.0 ? "Em Recuperação" : "Reprovado";
+
+  return {
+    aluno,
+    turma,
+    notasPorDisciplina: list,
+    mediaGeralFrequencia: mediaGeral,
+    statusResultadoFinal: statusGeral,
+    totalFaltasAcumuladas: totalAnualFaltas
+  };
 }
 
 // ========================== API ROUTES ==========================
 
 // Auth - Register
 app.post("/api/auth/register", (req, res) => {
-  const { name, email, password, phone } = req.body;
+  const { name, email, password, phone, role } = req.body;
   if (!name || !email || !password) {
     return res.status(400).json({ error: "Nome, e-mail e senha são obrigatórios." });
   }
@@ -161,13 +239,14 @@ app.post("/api/auth/register", (req, res) => {
     email,
     phone: phone || "",
     password,
+    role: role || "student",
     created_at: new Date().toISOString()
   };
 
   usersDb.push(newUser);
   res.status(201).json({
     message: "Cadastro efetuado com sucesso!",
-    user: { id: newUser.id, name: newUser.name, email: newUser.email, phone: newUser.phone }
+    user: { id: newUser.id, name: newUser.name, email: newUser.email, phone: newUser.phone, role: newUser.role }
   });
 });
 
@@ -180,404 +259,349 @@ app.post("/api/auth/login", (req, res) => {
 
   const user = usersDb.find(u => u.email.toLowerCase() === email.toLowerCase());
   if (!user || user.password !== password) {
-    return res.status(401).json({ error: "Credenciais incorretas." });
+    return res.status(401).json({ error: "Credenciais de acesso incorretas." });
   }
 
   res.json({
     message: "Autenticação bem-sucedida!",
-    token: `jwt-simulated-${user.id}`,
-    user: {
-      id: user.id,
-      name: user.name,
-      email: user.email,
-      phone: user.phone
-    }
-  });
-});
-
-// Auth - Update Profile Settings
-app.post("/api/auth/profile", (req, res) => {
-  const { userId, name, phone, password, avatar_url } = req.body;
-  const user = usersDb.find(u => u.id === userId);
-  if (!user) {
-    return res.status(404).json({ error: "Usuário não encontrado." });
-  }
-
-  if (name) user.name = name;
-  if (phone) user.phone = phone;
-  if (password) user.password = password;
-  if (avatar_url) user.avatar_url = avatar_url;
-
-  res.json({
-    message: "Perfil atualizado!",
     user: {
       id: user.id,
       name: user.name,
       email: user.email,
       phone: user.phone,
-      avatar_url: user.avatar_url
+      role: user.role
     }
   });
 });
 
-// Real-Time Analysis with Gemini Vision / OpenCV logic
-app.post("/api/analysis/create", async (req, res) => {
-  const { imageBase64, latitude, longitude, userId, presetId } = req.body;
-
-  if (!imageBase64 && !presetId) {
-    return res.status(400).json({ error: "O envio de uma imagem de terreno é obrigatório." });
-  }
-
-  const lat = latitude ? parseFloat(latitude) : -23.5505 + (Math.random() - 0.5) * 0.1;
-  const lng = longitude ? parseFloat(longitude) : -46.6333 + (Math.random() - 0.5) * 0.1;
-
-  try {
-    const ai = getGemini();
-
-    if (ai) {
-      // Se há cliente do Gemini ativo, faremos análise verídica via IA Generativa de Visão
-      let base64Data = imageBase64;
-      let mimeType = "image/jpeg";
-
-      // Tratar se for prefixo data:image/...
-      if (imageBase64 && imageBase64.includes(";base64,")) {
-        const parts = imageBase64.split(";base64,");
-        mimeType = parts[0].replace("data:", "");
-        base64Data = parts[1];
-      }
-
-      const prompt = `
-        Aja como um Engenheiro Civil Geotécnico especialista em Visão Computacional.
-        Analise a imagem deste terreno e produza um laudo técnico preliminar realista em formato JSON rígido.
-        Siga detalhadamente estas diretrizes e preencha as propriedades requeridas:
-        
-        1. slope: Detectar inclinação ("Plano" se o relevo for muito suave, "Inclinado" se houver aclive de encosta visível ou "Muito Íngreme" se for montanhoso ou encosta instável).
-        2. erosion: Detectar erosão ("Ausente", "Moderada" se houver cicatrizes superficiais, "Grave" se houver boçorocas ou deslizamentos visíveis).
-        3. water_accumulation: Detectar água acumulada ("Sem Água", "Umidade Alta" caso o solo pareça lamacento ou alagado temporariamente, "Acúmulo Grave" se houver poças/lakes).
-        4. vegetation: Cobertura vegetal ("Limpo / Rasteiro" se houver grama ou pouca vegetação, "Média" se houver arbustos dispersos, "Excessiva / Florestal" se for mata fechada/árvores grandes).
-        5. obstacles: Impedimentos visuais como entulho, rochas, construções abandonadas ("Ausente / Poucos", "Moderados", "Grandes Obstáculos").
-        6. accessibility: Condições de acesso de máquinas pesadas ("Boa Acessibilidade", "Acesso Limitado", "Sem Acesso").
-        7. soil_type: Classificação visual preliminar do tipo de solo (ex: "Seco / Rochoso", "Argiloso Orgânico", "Arenoso Siltozo", "Aluvial Lavado", etc.).
-        8. soil_firmness: Firmeza do solo estimada de forma preliminar ("Firme" para rochas e solos secos consolidados, "Instável / Macio" para lodo, banhado ou erosões severas).
-        
-        SISTEMA DE PONTUAÇÃO (Atribua rigorosamente estes valores se cumpridos, caso contrário atribua valores reduzidos ou zero):
-        - Terreno plano => 20 pontos (se Plano), 10 pontos (Inclinado), 0 (Muito Íngreme).
-        - Solo firme => 25 pontos (se Firme), senão 10 pontos.
-        - Sem erosão => 20 pontos (se Ausente), 10 pontos (Moderada), 0 (Grave).
-        - Sem água acumulada => 15 pontos (se Sem Água), 5 pontos (Umidade Alta), 0 (Acúmulo Grave).
-        - Boa acessibilidade => 10 pontos (se Boa), 5 pontos (Limitado), 0 (Sem Acesso).
-        - Poucos obstáculos => 10 pontos (se Ausente/Poucos), 5 pontos (Moderados), 0 (Grandes Obstáculos).
-        
-        A pontuação total 'score' deve ser a soma exata das pontuações atribuídas (mínimo 0, máximo 100).
-        Determine 'classification' com base no score:
-        - De 80 a 100 => "Alta" (Alta viabilidade preliminar)
-        - De 50 a 79 => "Moderada" (Viabilidade moderada)
-        - De 0 a 49 => "Inadequado" (Terreno visualmente inadequado)
-        
-        Gere 3 recomendações técnicas estruturais extremamente profissionais em português e salve no array 'recommendations'.
-      `;
-
-      const response = await ai.models.generateContent({
-        model: "gemini-3.5-flash",
-        contents: [
-          {
-            inlineData: {
-              data: base64Data,
-              mimeType: mimeType
-            }
-          },
-          { text: prompt }
-        ],
-        config: {
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              slope: { type: Type.STRING, description: "Plano, Inclinado ou Muito Íngreme" },
-              erosion: { type: Type.STRING, description: "Ausente, Moderada ou Grave" },
-              water_accumulation: { type: Type.STRING, description: "Sem Água, Umidade Alta ou Acúmulo Grave" },
-              vegetation: { type: Type.STRING, description: "Limpo / Rasteiro, Média ou Excessiva / Florestal" },
-              obstacles: { type: Type.STRING, description: "Ausente / Poucos, Moderados ou Grandes Obstáculos" },
-              accessibility: { type: Type.STRING, description: "Boa Acessibilidade, Acesso Limitado ou Sem Acesso" },
-              soil_type: { type: Type.STRING },
-              soil_firmness: { type: Type.STRING, description: "Firme ou Instável / Macio" },
-              score: { type: Type.INTEGER },
-              classification: { type: Type.STRING, description: "Alta, Moderada ou Inadequado" },
-              scores: {
-                type: Type.OBJECT,
-                properties: {
-                  slope: { type: Type.INTEGER },
-                  soil: { type: Type.INTEGER },
-                  erosion: { type: Type.INTEGER },
-                  water: { type: Type.INTEGER },
-                  accessibility: { type: Type.INTEGER },
-                  obstacles: { type: Type.INTEGER }
-                },
-                required: ["slope", "soil", "erosion", "water", "accessibility", "obstacles"]
-              },
-              recommendations: {
-                type: Type.ARRAY,
-                items: { type: Type.STRING }
-              }
-            },
-            required: [
-              "slope", "erosion", "water_accumulation", "vegetation", "obstacles", 
-              "accessibility", "soil_type", "soil_firmness", "score", "classification", 
-              "scores", "recommendations"
-            ]
-          }
-        }
-      });
-
-      const resultText = response.text ? response.text.trim() : "{}";
-      const parsed = JSON.parse(resultText);
-
-      const newAnalysis = {
-        id: `analysis-${Date.now()}`,
-        user_id: userId || "user-1",
-        image_url: imageBase64.startsWith("http") ? imageBase64 : `https://images.unsplash.com/photo-1590069261209-f8e9b8642343?auto=format&fit=crop&w=800&q=80`, // fallback
-        image_data_simulated: !imageBase64.startsWith("http") ? imageBase64 : undefined,
-        latitude: lat,
-        longitude: lng,
-        ...parsed,
-        created_at: new Date().toISOString()
-      };
-
-      analysesDb.unshift(newAnalysis);
-      return res.status(201).json(newAnalysis);
-
-    } else {
-      // Fallback Heurístico Local se a chave do Gemini não estiver configurada eletronicamente
-      // Isso simula o motor OpenCV localmente para garantir estabilidade imediata!
-      const randomArr = [
-        {
-          slope: "Plano",
-          soil_type: "Seco / Arenoso",
-          soil_firmness: "Firme",
-          erosion: "Ausente",
-          water_accumulation: "Sem Água",
-          vegetation: "Limpo / Rasteiro",
-          obstacles: "Ausente / Poucos",
-          accessibility: "Boa Acessibilidade",
-          scores: { slope: 20, soil: 25, erosion: 20, water: 15, accessibility: 10, obstacles: 10 },
-          score: 100,
-          classification: "Alta",
-          recommendations: [
-            "Terreno plano ideal. Sapatas isoladas rasas de concreto armado recomendadas.",
-            "Boa drenagem natural aparente. Nenhuma ação contra encostas é requerida.",
-            "Acesso excelente facilitado para a chegada imediata de caminhões betoneira."
-          ]
-        },
-        {
-          slope: "Inclinado",
-          soil_type: "Argiloso",
-          soil_firmness: "Firme",
-          erosion: "Ausente",
-          water_accumulation: "Umidade Alta",
-          vegetation: "Média",
-          obstacles: "Moderados",
-          accessibility: "Acesso Limitado",
-          scores: { slope: 10, soil: 25, erosion: 20, water: 5, accessibility: 5, obstacles: 5 },
-          score: 70,
-          classification: "Moderada",
-          recommendations: [
-            "Possui declividade lateral média. Será necessário terraplanagem mecânica.",
-            "Recomenda-se vigas baldrame com boa impermeabilização contra umidade.",
-            "Acesso com ângulo de subida acentuado. Exige manobras planejadas de terraplanagem."
-          ]
-        },
-        {
-          slope: "Muito Íngreme",
-          soil_type: "Rochoso Encosta",
-          soil_firmness: "Instável / Macio",
-          erosion: "Grave",
-          water_accumulation: "Acúmulo Grave",
-          vegetation: "Excessiva / Florestal",
-          obstacles: "Grandes Obstáculos",
-          accessibility: "Sem Acesso",
-          scores: { slope: 0, soil: 10, erosion: 0, water: 0, accessibility: 0, obstacles: 0 },
-          score: 10,
-          classification: "Inadequado",
-          recommendations: [
-            "Alto risco de escorregamento. Requer cortinas termo-ancoradas e contenção geológica.",
-            "O solo indica adensamento severo. Ensaios de contraprova em SPT em múltiplos pontos são emergenciais.",
-            "Custas elevadas previstas para a abertura legal de caminhos de acesso e supressão florestal."
-          ]
-        }
-      ];
-
-      // Escolhem um perfil heurístico baseado no presetId ou randomiza
-      let chosenProfile = randomArr[0];
-      if (presetId) {
-        if (presetId === "preset-inclinado") chosenProfile = randomArr[1];
-        if (presetId === "preset-íngreme") chosenProfile = randomArr[2];
-      } else {
-        // Se for upload aleatório, escolhe um aleatoriamente para simular a IA
-        chosenProfile = randomArr[Math.floor(Math.random() * randomArr.length)];
-      }
-
-      const newAnalysis = {
-        id: `analysis-${Date.now()}`,
-        user_id: userId || "user-1",
-        image_url: imageBase64?.startsWith("http") ? imageBase64 : `https://images.unsplash.com/photo-1590069261209-f8e9b8642343?auto=format&fit=crop&w=800&q=80`,
-        image_data_simulated: imageBase64 && !imageBase64.startsWith("http") ? imageBase64 : undefined,
-        latitude: lat,
-        longitude: lng,
-        ...chosenProfile,
-        created_at: new Date().toISOString(),
-        isSimulatedFallback: true // bandeira informativa para a UI saber se é do simulador
-      };
-
-      analysesDb.unshift(newAnalysis);
-      return res.status(201).json(newAnalysis);
-    }
-
-  } catch (error: any) {
-    console.error("Erro na API de Análise Inteligente de Terrenos:", error);
-    res.status(500).json({ error: "Falha ao processar análise visual", detail: error.message });
-  }
+// Academic - Core data lists
+app.get("/api/academic/students", (req, res) => {
+  res.json(studentsDb);
 });
 
-// List Analyses
+app.get("/api/academic/student/:id/boletim", (req, res) => {
+  const data = getBoletimCompleto(req.params.id);
+  if (!data) return res.status(404).json({ error: "Boletim acadêmico do aluno não localizado." });
+  res.json(data);
+});
+
+app.get("/api/academic/teachers", (req, res) => {
+  res.json(teachersDb);
+});
+
+app.get("/api/academic/classes", (req, res) => {
+  res.json(classesDb);
+});
+
+app.get("/api/academic/notices", (req, res) => {
+  res.json(noticesDb);
+});
+
+// Lançar ou Atualizar Nota (Professor/Admin)
+app.post("/api/academic/grades/submit", (req, res) => {
+  const { alunoId, disciplinaId, periodo, notaAvaliadora1, notaAvaliadora2, notaProjeto, totalFaltas } = req.body;
+  
+  if (!alunoId || !disciplinaId || !periodo) {
+    return res.status(400).json({ error: "Parâmetros obrigatórios incompletos." });
+  }
+
+  const n1 = parseFloat(notaAvaliadora1) || 0;
+  const n2 = parseFloat(notaAvaliadora2) || 0;
+  const proj = parseFloat(notaProjeto) || 0;
+  const media = parseFloat(((n1 * 0.4) + (n2 * 0.4) + (proj * 0.2)).toFixed(1));
+
+  // Verificar se lançamento já existe para atualizar, senão criar
+  const idx = gradeRecordsDb.findIndex(
+    g => g.alunoId === alunoId && g.disciplinaId === disciplinaId && g.periodo === periodo
+  );
+
+  if (idx !== -1) {
+    gradeRecordsDb[idx] = {
+      ...gradeRecordsDb[idx],
+      notaAvaliadora1: n1,
+      notaAvaliadora2: n2,
+      notaProjeto: proj,
+      notaFinal: media,
+      totalFaltas: parseInt(totalFaltas) || 0
+    };
+  } else {
+    gradeRecordsDb.push({
+      id: `nota-${Date.now()}`,
+      alunoId,
+      disciplinaId,
+      periodo,
+      notaAvaliadora1: n1,
+      notaAvaliadora2: n2,
+      notaProjeto: proj,
+      notaFinal: media,
+      totalFaltas: parseInt(totalFaltas) || 0
+    });
+  }
+
+  res.json({ message: "Notas e frequência consolidadas com sucesso." });
+});
+
+// Criar Comunicado
+app.post("/api/academic/notices", (req, res) => {
+  const { titulo, conteudo, destinatario, autor, categoria } = req.body;
+  if (!titulo || !conteudo) {
+    return res.status(400).json({ error: "Título e Conteúdo do comunicado são compulsórios." });
+  }
+
+  const newNotice = {
+    id: `not-${Date.now()}`,
+    titulo,
+    conteudo,
+    data: new Date().toISOString(),
+    destinatario: destinatario || "Todos",
+    autor: autor || "Sistema Escolar",
+    categoria: categoria || "Geral"
+  };
+
+  noticesDb.unshift(newNotice);
+  res.status(201).json(newNotice);
+});
+
+// Criar Aluno (Admin)
+app.post("/api/academic/students", (req, res) => {
+  const { nome, email, cpf, dataNascimento, turmaId, nomeResponsavel, contatoResponsavel } = req.body;
+  
+  if (!nome || !email || !turmaId) {
+    return res.status(400).json({ error: "Nome, e-mail e turma do aluno são obrigatórios." });
+  }
+
+  const newStudent = {
+    id: `aluno-${Date.now()}`,
+    matricula: `MAT-2026${String(studentsDb.length + 1).padStart(2, "0")}`,
+    nome,
+    email,
+    cpf: cpf || "---.---.----00",
+    dataNascimento: dataNascimento || "2008-01-01",
+    turmaId,
+    nomeResponsavel: nomeResponsavel || "Não Cadastrado",
+    contatoResponsavel: contatoResponsavel || email,
+    situacao: "Ativo"
+  };
+
+  studentsDb.push(newStudent);
+  res.status(201).json(newStudent);
+});
+
+// Excluir Aluno (Admin)
+app.delete("/api/academic/student/:id", (req, res) => {
+  const idx = studentsDb.findIndex(a => a.id === req.params.id);
+  if (idx === -1) {
+    return res.status(404).json({ error: "Estudante não localizado para exclusão." });
+  }
+  
+  studentsDb.splice(idx, 1);
+  gradeRecordsDb = gradeRecordsDb.filter(g => g.alunoId !== req.params.id);
+  res.json({ message: "Matrícula do estudante desativada de forma integral." });
+});
+
+// ========================== COMPATIBILITY ENDPOINTS ==========================
+// Reta de fallback de análise (reused to handle uploads if any old components call it)
+app.post("/api/analysis/create", (req, res) => {
+  res.json({ id: "analysis-simulated", score: 100 });
+});
+
 app.get("/api/analysis/list", (req, res) => {
-  res.json(analysesDb);
+  // Convert standard elements to analysis records for historical page compatibility
+  const compat = studentsDb.map(student => {
+    const b = getBoletimCompleto(student.id);
+    return {
+      id: student.id,
+      user_id: "user-admin",
+      image_url: "https://images.unsplash.com/photo-1427504494785-3a9ca7044f45?auto=format&fit=crop&w=400&q=80",
+      latitude: -23.5505,
+      longitude: -46.6333,
+      score: b ? Math.round(b.mediaGeralFrequencia * 10) : 80,
+      classification: b && b.mediaGeralFrequencia >= 7.0 ? "Alta" : "Moderada",
+      slope: "Plano",
+      soil_type: student.nome,
+      soil_firmness: "Firme",
+      erosion: "Ausente",
+      water_accumulation: "Sem Água",
+      vegetation: student.matricula,
+      obstacles: student.matricula,
+      accessibility: student.situacao,
+      created_at: new Date().toISOString()
+    };
+  });
+  res.json(compat);
 });
 
-// Delete Analysis
 app.delete("/api/analysis/:id", (req, res) => {
-  const { id } = req.params;
-  const index = analysesDb.findIndex(a => a.id === id);
-  if (index === -1) {
-    return res.status(404).json({ error: "Registro de análise não encontrado para exclusão." });
+  const idx = studentsDb.findIndex(a => a.id === req.params.id);
+  if (idx !== -1) {
+    studentsDb.splice(idx, 1);
   }
-
-  analysesDb.splice(index, 1);
-  res.json({ message: "Análise excluída de forma definitiva." });
+  res.json({ message: "Excluído." });
 });
 
-// Generate Professional PDF Report (Simulating ReportLab Python Service in backend)
+// PDF bulletin rendering endpoint
 app.get("/api/analysis/:id/pdf", (req, res) => {
+  renderStudentBulletinPDF(req, res);
+});
+
+app.get("/api/academic/student/:id/pdf", (req, res) => {
+  renderStudentBulletinPDF(req, res);
+});
+
+function renderStudentBulletinPDF(req: any, res: any) {
   const { id } = req.params;
-  const analysis = analysesDb.find(a => a.id === id);
-  if (!analysis) {
-    return res.status(404).send("Laudo técnico não encontrado no banco de dados.");
+  const data = getBoletimCompleto(id);
+  if (!data) {
+    return res.status(404).send("Boletim escolar não encontrado para o ID fornecido.");
   }
 
   res.setHeader("Content-Type", "application/pdf");
-  res.setHeader("Content-Disposition", `attachment; filename=Relatorio_GeoBuild_${id}.pdf`);
+  res.setHeader("Content-Disposition", `attachment; filename=Boletim_Colégio_Exemplar_${id}.pdf`);
 
-  const doc = new PDFDocument({ margin: 50, size: "A4" });
+  const doc = new PDFDocument({ margin: 45, size: "A4" });
   doc.pipe(res);
 
-  // Layout Design Corporativo Geotécnico
-  // Cabeçalho colorido em Azul Ardósia Escuro
-  doc.rect(0, 0, 595.28, 90).fill("#0f172a");
+  // Fundo do cabeçalho oficial (Azul Marinho)
+  doc.rect(0, 0, 595.28, 95).fill("#1e3a8a");
 
-  // Nome do App e Ícone / Círculo Verde
-  doc.fillColor("#10b981").circle(50, 45, 12).fill();
-  doc.fillColor("#0f172a").fontSize(10).font("Helvetica-Bold").text("GB", 43, 41, { width: 14, align: "center" });
+  // Logo da Escola "CE"
+  doc.fillColor("#10b981").rect(35, 30, 36, 36).fill();
+  doc.fillColor("#ffffff").fontSize(15).font("Helvetica-Bold").text("CE", 35, 41, { width: 36, align: "center" });
 
-  doc.fillColor("#10b981").fontSize(18).font("Helvetica-Bold").text("GEOBUILD VISION IA", 75, 30);
-  doc.fillColor("#94a3b8").fontSize(8).font("Helvetica").text("RELATÓRIO TÉCNICO DE VIABILIDADE GEOTÉCNICA PRELIMINAR", 75, 52);
+  doc.fillColor("#ffffff").fontSize(18).font("Helvetica-Bold").text("COLÉGIO EXEMPLAR", 85, 33);
+  doc.fillColor("#93c5fd").fontSize(8.5).font("Helvetica").text("COORDENAÇÃO PEDAGÓGICA • SISTEMA DE GESTÃO ESCOLAR INTEGRADO", 85, 54);
 
-  // Informações de Emissão
-  doc.fillColor("#64748b").fontSize(8).text(`EMISSÃO DIÁRIA: ${new Date(analysis.created_at).toLocaleDateString("pt-BR")} às ${new Date(analysis.created_at).toLocaleTimeString("pt-BR")}`, 380, 32, { align: "right", width: 170 });
-  doc.text(`CÓDIGO LAUDO: ${analysis.id.toUpperCase()}`, 380, 45, { align: "right", width: 170 });
-  doc.text(`CREA RESPONSÁVEL: SP-2026-ACTIVE`, 380, 58, { align: "right", width: 170 });
+  // Metadados do Lauto
+  doc.fillColor("#bfdbfe").fontSize(7.5).text(`EMISSÃO DIÁRIA: ${new Date().toLocaleDateString("pt-BR")} às ${new Date().toLocaleTimeString("pt-BR")}`, 380, 32, { align: "right", width: 180 });
+  doc.text(`REGISTRO MATRÍCULA: ${data.aluno.matricula}`, 380, 44, { align: "right", width: 180 });
+  doc.text(`ANO LETIVO: 2026 • PORTAL DO ALUNO`, 380, 56, { align: "right", width: 180 });
 
-  // Linha de Divisão
-  doc.strokeColor("#1e293b").lineWidth(1).moveTo(40, 110).lineTo(555, 110).stroke();
+  doc.strokeColor("#e2e8f0").lineWidth(1).moveTo(45, 115).lineTo(550, 115).stroke();
 
-  // Seção 1: IDENTIFICAÇÃO DO PROJETO E LOCALIZAÇÃO
+  // Seção 1: DADOS CADASTRAIS DO ALUNO
   doc.y = 125;
-  doc.fillColor("#0f172a").fontSize(12).font("Helvetica-Bold").text("1. IDENTIFICAÇÃO E DADOS GEOGRÁFICOS DO TERRENO", 40);
-  doc.moveDown(0.6);
+  doc.fillColor("#1e3a8a").fontSize(11).font("Helvetica-Bold").text("1. DADOS DE IDENTIFICAÇÃO E MATRÍCULA DO DISCENTE", 45);
 
-  const startY = doc.y;
-  // Caixa de Informações Gerais
-  doc.fillColor("#334155").fontSize(9).font("Helvetica-Bold").text("Coordenadas GPS Integradas:", 45, startY);
-  doc.fillColor("#0f172a").fontSize(10).font("Helvetica").text(`LATITUDE: ${analysis.latitude.toFixed(6)}°\nLONGITUDE: ${analysis.longitude.toFixed(6)}°`, 45, startY + 12);
-
-  doc.fillColor("#334155").fontSize(9).font("Helvetica-Bold").text("Status de Viabilidade:", 45, startY + 50);
-  const statusStr = analysis.classification === "Alta" ? "ALTA VIABILIDADE DE OBRAS" : analysis.classification === "Moderada" ? "VIABILIDADE SOB CONDIÇÕES" : "INADEQUADO PARA EDIFICAÇÃO";
-  const statusColor = analysis.score >= 80 ? "#10b981" : analysis.score >= 50 ? "#f59e0b" : "#ef4444";
-  doc.fillColor(statusColor).fontSize(10).font("Helvetica-Bold").text(statusStr, 45, startY + 62);
-
-  // Caixa Indicadora do Score Geral (no canto direito)
-  doc.roundedRect(380, startY, 175, 80, 8).fillAndStroke("#f8fafc", "#e2e8f0");
-  doc.fillColor("#475569").fontSize(8).font("Helvetica-Bold").text("SCORE DE SANIDADE GEOLÓGICA", 390, startY + 12, { width: 155, align: "center" });
-  doc.fillColor(statusColor).fontSize(28).font("Helvetica-Bold").text(`${analysis.score}`, 390, startY + 26, { width: 155, align: "center" });
-  doc.fillColor("#64748b").fontSize(8).font("Helvetica").text("Escala de 0 a 100 Pontos", 390, startY + 60, { width: 155, align: "center" });
-
-  // Seção 2: ANÁLISE DETALHADA DOS PARÂMETROS
-  doc.y = startY + 110;
-  doc.fillColor("#0f172a").fontSize(12).font("Helvetica-Bold").text("2. MAPEAMENTO MICROSCÓPICO DOS ATRIBUTOS", 40);
-  doc.moveDown(0.8);
-
-  const gridY = doc.y;
-  // Grid / Tabela de Atributos com fundo zebrado leve
-  const renderGridCell = (title: string, value: string, score: string, x: number, y: number, w: number, h: number) => {
-    doc.fillColor("#f1f5f9").rect(x, y, w, h).fill();
-    doc.fillColor("#e2e8f0").rect(x, y, w, h).stroke();
-    doc.fillColor("#64748b").fontSize(7).font("Helvetica-Bold").text(title.toUpperCase(), x + 8, y + 6);
-    doc.fillColor("#0f172a").fontSize(9).font("Helvetica-Bold").text(value, x + 8, y + 16);
-    doc.fillColor("#10b981").fontSize(7).font("Helvetica").text(`Class: ${score}`, x + 8, y + 28);
-  };
-
-  const cellW = 165;
-  const cellH = 40;
-
-  renderGridCell("Morfologia do Relevo", analysis.slope, `${analysis.scores?.slope ?? 0} pts`, 40, gridY, cellW, cellH);
-  renderGridCell("Tipo de Solo Identificado", analysis.soil_type, "Padrão", 215, gridY, cellW, cellH);
-  renderGridCell("Firmeza Geomecânica", analysis.soil_firmness, "Diferenciado", 390, gridY, cellW, cellH);
-
-  renderGridCell("Erosões Encosta", analysis.erosion, `${analysis.scores?.erosion ?? 0} pts`, 40, gridY + 50, cellW, cellH);
-  renderGridCell("Acúmulo de Água", analysis.water_accumulation, `${analysis.scores?.water ?? 0} pts`, 215, gridY + 50, cellW, cellH);
-  renderGridCell("Acessibilidade Logística", analysis.accessibility, `${analysis.scores?.accessibility ?? 0} pts`, 390, gridY + 50, cellW, cellH);
-
-  // Seção 3: PRELAUDO E DIRETRIZES TÉCNICAS
-  doc.y = gridY + 120;
-  doc.fillColor("#0f172a").fontSize(12).font("Helvetica-Bold").text("3. DIRETRIZES TÉCNICAS E PRELAUDO DE FUNDAÇÕES", 40);
-  doc.moveDown(0.6);
-
-  if (analysis.recommendations && analysis.recommendations.length > 0) {
-    analysis.recommendations.forEach((rec: string, index: number) => {
-      const bulletY = doc.y;
-      doc.fillColor("#10b981").circle(45, bulletY + 5, 3).fill();
-      doc.fillColor("#334155").fontSize(9.5).font("Helvetica").text(rec, 55, bulletY, { width: 500 });
-      doc.moveDown(0.6);
-    });
-  } else {
-    doc.fillColor("#64748b").fontSize(9.5).font("Helvetica-Oblique").text("Nenhuma recomendação registrada para este perfil.", 50);
-  }
-
-  // Seção 4: NOTA DE RESPONSABILIDADE
-  doc.moveDown(1.2);
-  const noteY = doc.y;
-  doc.fillColor("#fffbeb").rect(40, noteY, 515, 55).fill();
-  doc.strokeColor("#fef3c7").rect(40, noteY, 515, 55).stroke();
+  const cardY = doc.y + 6;
+  doc.roundedRect(45, cardY, 505, 54, 6).fillAndStroke("#f8fafc", "#e2e8f0");
   
-  doc.fillColor("#b45309").fontSize(7.5).font("Helvetica-Bold").text("AVISO DE SEGURANÇA E RESPONSABILIDADE CIVIL:", 48, noteY + 8);
-  doc.fillColor("#78350f").fontSize(8).font("Helvetica").text(
-    "Esta verificação digital é obtida instantaneamente por processamento algorítmico do modelo de Visão de Inteligência Artificial GeoBuild Vision. Ela não isenta, de modo algum, a obrigatoriedade de contratação de ensaios laboratoriais locais in-situ (sondagem SPT, ensaios triaxiais, poços de inspeção) e emissão de ART/RRT sob normas vigentes do CONFEA/CREA antes do início de fundações físicas.", 
-    48, 
-    noteY + 18, 
-    { width: 498, lineGap: 1.5 }
-  );
+  doc.fillColor("#475569").fontSize(8).font("Helvetica-Bold").text("ALUNO(A):", 55, cardY + 10);
+  doc.fillColor("#0f172a").fontSize(9.5).font("Helvetica").text(data.aluno.nome, 110, cardY + 9);
 
-  // Rodapé Oficial Estilizado
-  doc.strokeColor("#f1f5f9").lineWidth(1).moveTo(40, 755).lineTo(555, 755).stroke();
-  doc.fillColor("#94a3b8").fontSize(7).font("Helvetica-Bold").text("SISTEMA AUTOMÁTICO DE RELATÓRIOS GEOBUILD VISION", 40, 765);
-  doc.text("PROCESSADO VIA REPORTLAB ENGINE NO BACKEND PYTHON", 40, 774);
-  doc.text("Página 1 de 1", 380, 765, { align: "right", width: 175 });
+  doc.fillColor("#475569").fontSize(8).font("Helvetica-Bold").text("E-MAIL DISCENTE:", 55, cardY + 24);
+  doc.fillColor("#0f172a").fontSize(8.5).font("Helvetica").text(data.aluno.email, 150, cardY + 23);
+
+  doc.fillColor("#475569").fontSize(8).font("Helvetica-Bold").text("TURMA REGISTRADA:", 55, cardY + 38);
+  doc.fillColor("#10b981").fontSize(9).font("Helvetica-Bold").text(`${data.turma.nome} (${data.turma.periodo}) - ${data.turma.sala}`, 160, cardY + 37);
+
+  // Seção de Status e Notas Médias
+  doc.fillColor("#475569").fontSize(8).font("Helvetica-Bold").text("RESPONSÁVEL:", 295, cardY + 10);
+  doc.fillColor("#0f172a").fontSize(8.5).font("Helvetica").text(data.aluno.nomeResponsavel, 375, cardY + 9);
+
+  doc.fillColor("#475569").fontSize(8).font("Helvetica-Bold").text("CONTATO RESP.:", 295, cardY + 24);
+  doc.fillColor("#0f172a").fontSize(8.5).font("Helvetica").text(data.aluno.contatoResponsavel, 380, cardY + 23);
+
+  doc.fillColor("#475569").fontSize(8).font("Helvetica-Bold").text("SITUAÇÃO GERAL:", 295, cardY + 38);
+  const colorStatus = data.statusResultadoFinal === "Aprovado" ? "#10b981" : data.statusResultadoFinal === "Em Recuperação" ? "#f59e0b" : "#ef4444";
+  doc.fillColor(colorStatus).fontSize(9).font("Helvetica-Bold").text(data.statusResultadoFinal.toUpperCase(), 390, cardY + 37);
+
+  // Seção 2: BOLETIM DETALHADO POR DISCIPLINA
+  doc.y = cardY + 75;
+  doc.fillColor("#1e3a8a").fontSize(11).font("Helvetica-Bold").text("2. RENDIMENTO ACADÊMICO E CONTROLE DE PRESENÇAS", 45);
+
+  const tHeaderY = doc.y + 6;
+  doc.fillColor("#efefef").rect(45, tHeaderY, 505, 18).fill();
+  doc.fillColor("#e2e8f0").rect(45, tHeaderY, 505, 18).stroke();
+
+  doc.fillColor("#1e3a8a").fontSize(7.5).font("Helvetica-Bold");
+  doc.text("MATÉRIA / COMPONENTE CURRICULAR", 52, tHeaderY + 5);
+  doc.text("PROFESSOR", 155, tHeaderY + 5);
+  doc.text("B1", 285, tHeaderY + 5);
+  doc.text("B2", 315, tHeaderY + 5);
+  doc.text("B3", 345, tHeaderY + 5);
+  doc.text("B4", 375, tHeaderY + 5);
+  doc.text("MÉDIA ANUAL", 405, tHeaderY + 5);
+  doc.text("FALTAS", 480, tHeaderY + 5);
+  doc.text("RESULTADO", 512, tHeaderY + 5);
+
+  let curY = tHeaderY + 18;
+
+  data.notasPorDisciplina.forEach((disc: any) => {
+    // Zebra background
+    doc.fillColor("#fcfcfc").rect(45, curY, 505, 20).fill();
+    doc.strokeColor("#f1f5f9").rect(45, curY, 505, 20).stroke();
+
+    doc.fillColor("#0f172a").fontSize(8.5).font("Helvetica-Bold").text(disc.disciplinaNome, 52, curY + 6, { width: 100 });
+    doc.fillColor("#475569").fontSize(7.5).font("Helvetica").text(disc.professorNome, 155, curY + 6, { width: 120 });
+    
+    doc.fillColor("#0f172a").fontSize(8.5);
+    doc.text(disc.bimestres["Bimestre 1"].media ? disc.bimestres["Bimestre 1"].media.toFixed(1) : "-", 285, curY + 6);
+    doc.text(disc.bimestres["Bimestre 2"].media ? disc.bimestres["Bimestre 2"].media.toFixed(1) : "-", 315, curY + 6);
+    doc.text(disc.bimestres["Bimestre 3"].media ? disc.bimestres["Bimestre 3"].media.toFixed(1) : "-", 345, curY + 6);
+    doc.text(disc.bimestres["Bimestre 4"].media ? disc.bimestres["Bimestre 4"].media.toFixed(1) : "-", 375, curY + 6);
+
+    const mStyleColor = disc.mediaFinalAno >= 7.0 ? "#10b981" : disc.mediaFinalAno >= 5.0 ? "#f59e0b" : "#ef4444";
+    doc.fillColor(mStyleColor).font("Helvetica-Bold").text(disc.mediaFinalAno.toFixed(1), 415, curY + 6);
+    
+    doc.fillColor("#0f172a").font("Helvetica").text(disc.faltasTotaisAno ? String(disc.faltasTotaisAno) : "0", 488, curY + 6);
+    
+    // Status text
+    const cellStatusColor = disc.resultado === "Aprovado" ? "#10b981" : disc.resultado === "Recuperação" ? "#f59e0b" : "#ef4444";
+    doc.fillColor(cellStatusColor).fontSize(7).font("Helvetica-Bold").text(disc.resultado.toUpperCase(), 512, curY + 6);
+
+    curY += 20;
+  });
+
+  // Caixa de Resumo no rodapé do boletim
+  const infoBlockY = curY + 15;
+  doc.roundedRect(45, infoBlockY, 505, 58, 6).fillAndStroke("#eff6ff", "#bfdbfe");
+
+  doc.fillColor("#1e3a8a").fontSize(8).font("Helvetica-Bold").text("MÉDIA GERAL FINAL:", 55, infoBlockY + 12);
+  doc.fillColor("#1e3a8a").fontSize(14).text(`${data.mediaGeralFrequencia}`, 55, infoBlockY + 23);
+
+  doc.fillColor("#1e3a8a").fontSize(8).font("Helvetica-Bold").text("PRESENÇA GLOBAL ESTIMADA / FALTAS GERAIS:", 200, infoBlockY + 12);
+  const totalPresenca = parseFloat((100 - (data.totalFaltasAcumuladas / 120 * 100)).toFixed(1));
+  doc.fillColor("#0f172a").fontSize(10).font("Helvetica").text(`${totalPresenca}% de presença de Frequências (${data.totalFaltasAcumuladas} faltas acumuladas)`, 200, infoBlockY + 23);
+  doc.fontSize(7.5).font("Helvetica-Oblique").text("Presença mínima permitida para aprovação: 75%", 200, infoBlockY + 36);
+
+  doc.fillColor("#1e3a8a").fontSize(8).font("Helvetica-Bold").text("DECISÃO COORDENAÇÃO:", 415, infoBlockY + 12);
+  doc.fillColor(colorStatus).fontSize(11).font("Helvetica-Bold").text(data.statusResultadoFinal.toUpperCase(), 415, infoBlockY + 23);
+
+  // Termo De Notas Finais com assinaturas
+  const signY = infoBlockY + 95;
+  doc.strokeColor("#bfdbfe").lineWidth(0.5).moveTo(65, signY).lineTo(235, signY).stroke();
+  doc.strokeColor("#bfdbfe").lineWidth(0.5).moveTo(315, signY).lineTo(485, signY).stroke();
+
+  doc.fillColor("#475569").fontSize(8).font("Helvetica").text("Carimbo e Direção Escolar Geral", 65, signY + 6, { align: "center", width: 170 });
+  doc.text("Assinatura da Orientação Pedagógica", 315, signY + 6, { align: "center", width: 170 });
+
+  // Rodapé Oficial
+  doc.strokeColor("#e2e8f0").lineWidth(1).moveTo(45, 760).lineTo(550, 760).stroke();
+  doc.fillColor("#94a3b8").fontSize(7.5).font("Helvetica-Bold").text("PORTAL DO ALUNO COLÉGIO EXEMPLAR INTERATIVO IA", 45, 768);
+  doc.text("DOCUMENTO IMPRESSO PELO SISTEMA OFICIAL DE ACADÊMICOS", 45, 777);
+  doc.text("Página 1 de 1", 380, 768, { align: "right", width: 170 });
 
   doc.end();
+}
+
+// Generate docx report
+app.get("/api/report/docx", async (req, res) => {
+  try {
+    const doc = generateTechnicalReportDocx();
+    const buffer = await Packer.toBuffer(doc);
+
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+    res.setHeader("Content-Disposition", "attachment; filename=Projeto_Pedagogico_Colegio_Exemplar_2026.docx");
+    res.send(buffer);
+  } catch (error: any) {
+    console.error("Erro ao gerar documento Word do colégio:", error);
+    res.status(500).send("Falha ao gerar documento Word do colégio: " + error.message);
+  }
 });
 
 // ========================== VITE BOOTSTRAP ==========================
 
 async function startServer() {
-  // Configuração do Middleware do Vite em ambiente de desenvolvimento
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
       server: { middlewareMode: true },
@@ -585,7 +609,6 @@ async function startServer() {
     });
     app.use(vite.middlewares);
   } else {
-    // Servir arquivos de produção compilados
     const distPath = path.join(process.cwd(), "dist");
     app.use(express.static(distPath));
     app.get("*", (req, res) => {
@@ -595,7 +618,7 @@ async function startServer() {
 
   app.listen(PORT, "0.0.0.0", () => {
     console.log(`\n=============================================================`);
-    console.log(`✔ GeoBuild Vision Server inicializado com sucesso!`);
+    console.log(`✔ Colégio Exemplar Server inicializado com sucesso!`);
     console.log(`✔ Escutando na porta: ${PORT}`);
     console.log(`✔ Link de teste: http://localhost:${PORT}`);
     console.log(`=============================================================\n`);

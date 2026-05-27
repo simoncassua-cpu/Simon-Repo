@@ -4,11 +4,11 @@
  */
 
 import React, { useState } from "react";
-import { Copy, Check, FileCode, FolderGit, Database, Cpu, HelpCircle } from "lucide-react";
+import { Copy, Check, FileCode, FolderGit, Database, Cpu, HelpCircle, Download } from "lucide-react";
 import { FLUTTER_FILES, BACKEND_FILES, DB_SCHEMA, INSTRUCTIONS_MD } from "../data/sourceCode";
 
 export default function DeveloperHub() {
-  const [activeTab, setActiveTab] = useState<"flutter" | "fastapi" | "database" | "ai" | "guide">("flutter");
+  const [activeTab, setActiveTab] = useState<"flutter" | "fastapi" | "database" | "guide">("flutter");
   const [subTab, setSubTab] = useState(0);
   const [copied, setCopied] = useState(false);
 
@@ -19,11 +19,9 @@ export default function DeveloperHub() {
       case "fastapi":
         return BACKEND_FILES[subTab]?.code || "";
       case "database":
-        return DB_SCHEMA;
-      case "ai":
-        return BACKEND_FILES.find(f => f.title === "ai_engine.py")?.code || BACKEND_FILES[2]?.code || "";
+        return DB_SCHEMA[0]?.code || "";
       case "guide":
-        return INSTRUCTIONS_MD;
+        return INSTRUCTIONS_MD[0]?.code || "";
     }
   };
 
@@ -35,10 +33,8 @@ export default function DeveloperHub() {
         return BACKEND_FILES[subTab]?.path || "";
       case "database":
         return "database/schema.sql";
-      case "ai":
-        return "backend/ai/ai_engine.py";
       case "guide":
-        return "GUIDE.md";
+        return "docs/GUIA_IMPLANTACAO.md";
     }
   };
 
@@ -56,31 +52,44 @@ export default function DeveloperHub() {
       <div className="bg-slate-950 px-6 py-4 border-b border-slate-800 flex flex-wrap items-center justify-between gap-4">
         <div>
           <h2 className="text-lg font-bold text-slate-100 flex items-center gap-2">
-            <FolderGit className="h-5 w-5 text-emerald-400" />
-            Workspace de Arquitetura & Código Fonte
+            <FolderGit className="h-5 w-5 text-indigo-400" />
+            Portal de Tecnologia & Arquitetura de Código
           </h2>
           <p className="text-xs text-slate-400 mt-1">
-            Código completo, higienizado e pronto para escalabilidade de engenharia civil.
+            Arquitetura de sistemas multi-plataforma e esquemas relacionais do Colégio Exemplar.
           </p>
         </div>
         
-        {/* Copy Button */}
-        <button
-          onClick={handleCopy}
-          className="flex items-center gap-2 px-3 py-1.5 text-xs font-semibold text-white bg-slate-800 hover:bg-slate-700 active:bg-slate-800 rounded-lg border border-slate-700 transition"
-        >
-          {copied ? (
-            <>
-              <Check className="h-4 w-4 text-emerald-400 animate-pulse" />
-              <span>Copiado!</span>
-            </>
-          ) : (
-            <>
-              <Copy className="h-4 w-4 text-slate-400" />
-              <span>Copiar Código</span>
-            </>
-          )}
-        </button>
+        {/* Buttons Group */}
+        <div className="flex items-center gap-2.5">
+          {/* Download Word Report */}
+          <a
+            href="/api/report/docx"
+            download="Projeto_Pedagogico_Colegio_Exemplar_2026.docx"
+            className="flex items-center gap-2 px-3.5 py-1.5 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-600 rounded-lg transition"
+          >
+            <Download className="h-4 w-4" />
+            <span>Baixar Manual Word (.docx)</span>
+          </a>
+
+          {/* Copy Button */}
+          <button
+            onClick={handleCopy}
+            className="flex items-center gap-2 px-3 py-1.5 text-xs font-semibold text-white bg-slate-800 hover:bg-slate-700 active:bg-slate-800 rounded-lg border border-slate-700 transition"
+          >
+            {copied ? (
+              <>
+                <Check className="h-4 w-4 text-emerald-400 animate-pulse" />
+                <span>Copiado!</span>
+              </>
+            ) : (
+              <>
+                <Copy className="h-4 w-4 text-slate-400" />
+                <span>Copiar Código</span>
+              </>
+            )}
+          </button>
+        </div>
       </div>
 
       {/* Primary Tabs */}
@@ -89,56 +98,45 @@ export default function DeveloperHub() {
           onClick={() => { setActiveTab("flutter"); setSubTab(0); }}
           className={`flex items-center gap-2 px-5 py-3 text-xs font-medium cursor-pointer border-b-2 transition whitespace-nowrap ${
             activeTab === "flutter"
-              ? "border-emerald-500 text-emerald-400 bg-emerald-500/5 font-semibold"
+              ? "border-indigo-500 text-indigo-450 bg-indigo-500/5 font-semibold"
               : "border-transparent text-slate-400 hover:text-slate-200"
           }`}
         >
-          <FileCode className="h-4 w-4 text-sky-400" />
+          <FileCode className="h-4 w-4 text-indigo-400" />
           Dart / Flutter
         </button>
         <button
           onClick={() => { setActiveTab("fastapi"); setSubTab(0); }}
           className={`flex items-center gap-2 px-5 py-3 text-xs font-medium cursor-pointer border-b-2 transition whitespace-nowrap ${
             activeTab === "fastapi"
-              ? "border-emerald-500 text-emerald-400 bg-emerald-500/5 font-semibold"
+              ? "border-indigo-500 text-indigo-450 bg-indigo-500/5 font-semibold"
               : "border-transparent text-slate-400 hover:text-slate-200"
           }`}
         >
-          <Cpu className="h-4 w-4 text-teal-400" />
-          FastAPI / Python
+          <Cpu className="h-4 w-4 text-sky-450" />
+          FastAPI / Python (API)
         </button>
         <button
           onClick={() => setActiveTab("database")}
           className={`flex items-center gap-2 px-5 py-3 text-xs font-medium cursor-pointer border-b-2 transition whitespace-nowrap ${
             activeTab === "database"
-              ? "border-emerald-500 text-emerald-400 bg-emerald-500/5 font-semibold"
+              ? "border-indigo-500 text-indigo-450 bg-indigo-500/5 font-semibold"
               : "border-transparent text-slate-400 hover:text-slate-200"
           }`}
         >
-          <Database className="h-4 w-4 text-violet-400" />
+          <Database className="h-4 w-4 text-emerald-400" />
           PostgreSQL DDL
-        </button>
-        <button
-          onClick={() => { setActiveTab("ai"); setSubTab(0); }}
-          className={`flex items-center gap-2 px-5 py-3 text-xs font-medium cursor-pointer border-b-2 transition whitespace-nowrap ${
-            activeTab === "ai"
-              ? "border-emerald-500 text-emerald-400 bg-emerald-500/5 font-semibold"
-              : "border-transparent text-slate-400 hover:text-slate-200"
-          }`}
-        >
-          <Cpu className="h-4 w-4 text-pink-400" />
-          Detecção IA OpenCV
         </button>
         <button
           onClick={() => setActiveTab("guide")}
           className={`flex items-center gap-2 px-5 py-3 text-xs font-medium cursor-pointer border-b-2 transition whitespace-nowrap ${
             activeTab === "guide"
-              ? "border-emerald-500 text-emerald-400 bg-emerald-500/5 font-semibold"
+              ? "border-indigo-500 text-indigo-450 bg-indigo-500/5 font-semibold"
               : "border-transparent text-slate-400 hover:text-slate-200"
           }`}
         >
           <HelpCircle className="h-4 w-4 text-amber-500" />
-          Manual de Execução
+          Guia de Implantação
         </button>
       </div>
 
@@ -151,7 +149,7 @@ export default function DeveloperHub() {
               onClick={() => setSubTab(i)}
               className={`px-3 py-1 rounded text-[11px] font-medium transition cursor-pointer ${
                 subTab === i
-                  ? "bg-slate-800 text-emerald-400 border border-slate-700"
+                  ? "bg-slate-800 text-indigo-400 border border-slate-705"
                   : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/40"
               }`}
             >
@@ -169,7 +167,7 @@ export default function DeveloperHub() {
               onClick={() => setSubTab(i)}
               className={`px-3 py-1 rounded text-[11px] font-medium transition cursor-pointer ${
                 subTab === i
-                  ? "bg-slate-800 text-emerald-400 border border-slate-700"
+                  ? "bg-slate-800 text-indigo-400 border border-slate-705"
                   : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/40"
               }`}
             >
@@ -180,24 +178,18 @@ export default function DeveloperHub() {
       )}
 
       {/* Code Editor Viewport */}
-      <div className="flex-1 flex flex-col min-h-0 bg-[#0d1117] relative">
+      <div className="flex-1 flex flex-col min-h-0 bg-[#0d1117] relative border-t border-slate-800">
         {/* Terminal Header */}
         <div className="flex justify-between items-center text-[10px] font-mono text-slate-500 px-4 py-1.5 bg-slate-950/40 select-none border-b border-slate-800/40">
           <span>{getActivePath()}</span>
           <span>UTF-8 • {currentCode.split("\n").length} linhas</span>
         </div>
 
-        {/* Real Syntax Highlighted Scrollable Code */}
+        {/* Code Content */}
         <div className="flex-1 overflow-auto p-4 md:p-6 font-mono text-xs text-slate-300 leading-relaxed scrollbar-thin scrollbar-track-slate-950 scrollbar-thumb-slate-800">
-          {activeTab === "guide" ? (
-            <div className="prose prose-invert prose-emerald text-sm text-slate-300 max-w-none space-y-4">
-              <div className="whitespace-pre-wrap font-sans">{currentCode}</div>
-            </div>
-          ) : (
-            <pre className="whitespace-pre scrollbar-none">
-              <code>{currentCode}</code>
-            </pre>
-          )}
+          <pre className="whitespace-pre scrollbar-none">
+            <code>{currentCode}</code>
+          </pre>
         </div>
       </div>
     </div>

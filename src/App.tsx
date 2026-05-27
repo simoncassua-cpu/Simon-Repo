@@ -5,1189 +5,822 @@
 
 import React, { useState, useEffect } from "react";
 import { 
-  Compass, MapPin, Camera, Image, CheckCircle, AlertTriangle, AlertOctagon, 
-  Trash2, User, Phone, Key, HelpCircle, ArrowRight, LogIn, UserPlus, 
-  FileText, TrendingUp, Sliders, Smartphone, Info, RefreshCw, Layers, Check, ChevronRight, Upload, Map
+  GraduationCap, BookOpen, Users, Award, Calendar, Bell, ChevronRight, 
+  Download, FileText, CheckCircle, User, Shield, Book, Plus, Trash2, 
+  Search, Lock, Check, Mail, Phone, MapPin, School, ArrowRight, ExternalLink, RefreshCw
 } from "lucide-react";
 import DeveloperHub from "./components/DeveloperHub";
-import { Analysis } from "./types";
+import StudentDashboard from "./components/portal/StudentDashboard";
+import TeacherDashboard from "./components/portal/TeacherDashboard";
+import AdminDashboard from "./components/portal/AdminDashboard";
 
-// Tipagem do usuário simulado
-interface MockUser {
-  id: string;
-  name: string;
-  email: string;
-  phone: string;
-  avatar_url?: string;
-}
+// Definições de Interfaces de acordo com src/types.ts
+import { Aluno, Professor, Turma, Comunicado } from "./types";
 
 export default function App() {
-  // Mobile Frame States
-  const [mobileScreen, setMobileScreen] = useState<"splash" | "login" | "register" | "dashboard" | "camera" | "result" | "history" | "profile">("splash");
-  const [splashCompleted, setSplashCompleted] = useState(false);
+  // Navigation States
+  const [activeSection, setActiveSection] = useState<"public" | "portal" | "techHub">("public");
   
-  // Auth Form State
-  const [currentUser, setCurrentUser] = useState<MockUser | null>({
-    id: "user-1",
-    name: "Eng. Gabriel Silva",
-    email: "simoncassua@gmail.com",
-    phone: "+55 (11) 98888-7777"
-  });
+  // Portal Role States
+  const [portalView, setPortalView] = useState<"login" | "student" | "teacher" | "admin">("login");
+  const [loggedInUser, setLoggedInUser] = useState<any>(null);
+
+  // Auth Inputs
+  const [loginEmail, setLoginEmail] = useState("");
+  const [loginPwd, setLoginPwd] = useState("");
   const [authError, setAuthError] = useState("");
-  const [loginEmail, setLoginEmail] = useState("simoncassua@gmail.com");
-  const [loginPwd, setLoginPwd] = useState("123");
-  const [regName, setRegName] = useState("");
-  const [regEmail, setRegEmail] = useState("");
-  const [regPhone, setRegPhone] = useState("");
-  const [regPwd, setRegPwd] = useState("");
 
-  // Profiling Settings Form State
-  const [profileName, setProfileName] = useState(currentUser?.name || "");
-  const [profilePhone, setProfilePhone] = useState(currentUser?.phone || "");
-  const [profilePwd, setProfilePwd] = useState("");
-  const [profileSuccess, setProfileSuccess] = useState(false);
+  // Academic DB States (Fechados pela API)
+  const [students, setStudents] = useState<Aluno[]>([]);
+  const [teachers, setTeachers] = useState<Professor[]>([]);
+  const [classes, setClasses] = useState<Turma[]>([]);
+  const [notices, setNotices] = useState<Comunicado[]>([]);
+  const [loading, setLoading] = useState(false);
 
-  // Analysis System States
-  const [analyses, setAnalyses] = useState<Analysis[]>([]);
-  const [loadingHistory, setLoadingHistory] = useState(false);
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [currentAnalysis, setCurrentAnalysis] = useState<Analysis | null>(null);
-  
-  // Custom camera parameters simulated
-  const [gpsCoords, setGpsCoords] = useState<{ lat: number; lng: number }>({ lat: -23.5505, lng: -46.6333 });
-  const [gettingLocation, setGettingLocation] = useState(false);
-  const [selectedPreset, setSelectedPreset] = useState<string>("preset-plano");
-  const [customFileBase64, setCustomFileBase64] = useState<string | null>(null);
-  const [customFileName, setCustomFileName] = useState("");
-  
-  const [analysisError, setAnalysisError] = useState("");
-  const [historySearch, setHistorySearch] = useState("");
+  // Selected Data and Forms
+  const [selectedStudentId, setSelectedStudentId] = useState<string>("aluno-1");
+  const [studentBoletim, setStudentBoletim] = useState<any>(null);
+  const [boletimLoading, setBoletimLoading] = useState(false);
 
-  // Splash Screen Automator
-  useEffect(() => {
-    if (mobileScreen === "splash") {
-      const timer = setTimeout(() => {
-        setMobileScreen("login");
-        setSplashCompleted(true);
-      }, 2500);
-      return () => clearTimeout(timer);
-    }
-  }, [mobileScreen]);
+  // Form para novas matrículas
+  const [studentForm, setStudentForm] = useState({
+    nome: "",
+    email: "",
+    cpf: "",
+    dataNascimento: "",
+    turmaId: "turma-3a",
+    nomeResponsavel: "",
+    contatoResponsavel: ""
+  });
+  const [studentFormSuccess, setStudentFormSuccess] = useState(false);
 
-  // Carregar histórico de análises da API no carregamento do app
-  const fetchAnalyses = async () => {
-    setLoadingHistory(true);
+  // Form para lançamento de notas
+  const [gradeForm, setGradeForm] = useState({
+    alunoId: "aluno-1",
+    disciplinaId: "disc-pt",
+    periodo: "Bimestre 1",
+    notaAvaliadora1: "8.0",
+    notaAvaliadora2: "8.5",
+    notaProjeto: "9.0",
+    totalFaltas: "0"
+  });
+  const [gradeFormSuccess, setGradeFormSuccess] = useState(false);
+
+  // Form para postar avisos
+  const [noticeForm, setNoticeForm] = useState({
+    titulo: "",
+    conteudo: "",
+    destinatario: "Todos",
+    categoria: "Geral"
+  });
+  const [noticeFormSuccess, setNoticeFormSuccess] = useState(false);
+
+  // Search filter
+  const [studentSearch, setStudentSearch] = useState("");
+
+  // Load Initial Academic Catalogues
+  const loadAcademicData = async () => {
+    setLoading(true);
     try {
-      const res = await fetch("/api/analysis/list");
-      if (res.ok) {
-        const data = await res.json();
-        setAnalyses(data);
+      const [resStud, resTeach, resClass, resNot] = await Promise.all([
+        fetch("/api/academic/students").then(r => r.json()),
+        fetch("/api/academic/teachers").then(r => r.json()),
+        fetch("/api/academic/classes").then(r => r.json()),
+        fetch("/api/academic/notices").then(r => r.json())
+      ]);
+      setStudents(resStud);
+      setTeachers(resTeach);
+      setClasses(resClass);
+      setNotices(resNot);
+
+      // Defina primeiro aluno carregado se disponível
+      if (resStud && resStud.length > 0) {
+        setSelectedStudentId(resStud[0].id);
       }
     } catch (e) {
-      console.error("Erro ao carregar histórico:", e);
+      console.error("Falha ao sincronizar dados do colégio:", e);
     } finally {
-      setLoadingHistory(false);
+      setLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchAnalyses();
+    loadAcademicData();
   }, []);
 
-  // Sync profile form states
-  useEffect(() => {
-    if (currentUser) {
-      setProfileName(currentUser.name);
-      setProfilePhone(currentUser.phone);
-    }
-  }, [currentUser]);
-
-  // Trigger GPS locator
-  const triggerGPS = () => {
-    if (!navigator.geolocation) {
-      alert("GPS não é suportado pelo seu navegador.");
-      return;
-    }
-    setGettingLocation(true);
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        setGpsCoords({
-          lat: parseFloat(pos.coords.latitude.toFixed(6)),
-          lng: parseFloat(pos.coords.longitude.toFixed(6))
-        });
-        setGettingLocation(false);
-      },
-      (error) => {
-        console.warn("Erro ao ler coordenadas reais. Utilizando simulação realista.", error);
-        // Gerar coordenadas plausíveis de engenharia
-        setGpsCoords({
-          lat: parseFloat((-23.55 + (Math.random() - 0.5) * 0.1).toFixed(6)),
-          lng: parseFloat((-46.63 + (Math.random() - 0.5) * 0.1).toFixed(6))
-        });
-        setGettingLocation(false);
+  // Fetch Bulletin of Selected Student
+  const fetchSelectedStudentBoletim = async (id: string) => {
+    if (!id) return;
+    setBoletimLoading(true);
+    try {
+      const res = await fetch(`/api/academic/student/${id}/boletim`);
+      if (res.ok) {
+        const data = await res.json();
+        setStudentBoletim(data);
       }
-    );
-  };
-
-  // Pre-loaded photo examples for simulation
-  const PRESET_MAPPING: Record<string, { title: string; desc: string; url: string; presetRef: string }> = {
-    "preset-plano": {
-      title: "Terreno Plano Limpo",
-      desc: "Solo firme, plano, boa iluminação e limpo de arbustos densos.",
-      url: "https://images.unsplash.com/photo-1590069261209-f8e9b8642343?auto=format&fit=crop&w=400&q=80",
-      presetRef: "preset-plano"
-    },
-    "preset-inclinado": {
-      title: "Encosta Suave Úmida",
-      desc: "Presença de declive médio, solo argiloso e vegetação herbácea média.",
-      url: "https://images.unsplash.com/photo-1500382017468-9049fed747ef?auto=format&fit=crop&w=400&q=80",
-      presetRef: "preset-inclinado"
-    },
-    "preset-ingreme": {
-      title: "Montanhoso com Obstáculo",
-      desc: "Muito íngreme, rochoso, alta densidade de árvores e acesso restrito.",
-      url: "https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?auto=format&fit=crop&w=400&q=80",
-      presetRef: "preset-íngreme"
+    } catch (err) {
+      console.error("Erro ao carregar boletim pedagógico:", err);
+    } finally {
+      setBoletimLoading(false);
     }
   };
 
-  const currentPresetData = PRESET_MAPPING[selectedPreset] || PRESET_MAPPING["preset-plano"];
+  useEffect(() => {
+    fetchSelectedStudentBoletim(selectedStudentId);
+  }, [selectedStudentId, students]);
 
-  // Custom Image File Picker Parser
-  const handleImageFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  // Auth Submit Handlers
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAuthError("");
+    try {
+      const res = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: loginEmail, password: loginPwd })
+      });
 
-    setCustomFileName(file.name);
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      setCustomFileBase64(reader.result as string);
-    };
-    reader.readAsDataURL(file);
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || "Tentativa de login recusada pelo sistema.");
+      }
+
+      const data = await res.json();
+      setLoggedInUser(data.user);
+      
+      // Direcionar para a visualização correta
+      if (data.user.role === "admin") {
+        setPortalView("admin");
+      } else if (data.user.role === "teacher") {
+        setPortalView("teacher");
+        // Ajustar gradeForm para registrar notas recomendadas
+        setGradeForm(prev => ({ ...prev, alunoId: students[0]?.id || "aluno-1" }));
+      } else {
+        setPortalView("student");
+        // Forçar exibição do próprio boletim do aluno Ricardo Cassua
+        const matchStudent = students.find(s => s.email.toLowerCase() === data.user.email.toLowerCase());
+        if (matchStudent) {
+          setSelectedStudentId(matchStudent.id);
+        }
+      }
+    } catch (err: any) {
+      setAuthError(err.message || "Erro de login");
+    }
   };
 
-  // Real-Time Analysis Dispatcher
-  const handleStartAnalysis = async () => {
-    setIsAnalyzing(true);
-    setAnalysisError("");
-    
-    // Preparar dados
-    let imagePayload = currentPresetData.url;
-    let presetRefValue = currentPresetData.presetRef;
+  // Helper de login rápido simulado (Frictionless login)
+  const executeQuickLogin = (role: "admin" | "teacher" | "student") => {
+    setAuthError("");
+    let email = "";
+    let pwd = "123";
 
-    if (customFileBase64) {
-      imagePayload = customFileBase64;
-      presetRefValue = ""; // remove o preset se for customizado
+    if (role === "admin") {
+      email = "simoncassua@gmail.com";
+    } else if (role === "teacher") {
+      email = "professor@exemplar.com";
+    } else {
+      email = "aluno@exemplar.com";
     }
+
+    setLoginEmail(email);
+    setLoginPwd(pwd);
+
+    // Auto-submeter no próximo tick
+    setTimeout(() => {
+      const mockForm = {
+        preventDefault: () => {}
+      };
+      // Chamada direta do login
+      fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password: pwd })
+      })
+        .then(res => res.json())
+        .then(data => {
+          if (data.error) {
+            setAuthError(data.error);
+            return;
+          }
+          setLoggedInUser(data.user);
+          if (data.user.role === "admin") setPortalView("admin");
+          else if (data.user.role === "teacher") setPortalView("teacher");
+          else {
+            setPortalView("student");
+            const match = students.find(s => s.email.toLowerCase() === data.user.email.toLowerCase());
+            if (match) setSelectedStudentId(match.id);
+          }
+        });
+    }, 150);
+  };
+
+  const handleLogout = () => {
+    setLoggedInUser(null);
+    setPortalView("login");
+    setLoginEmail("");
+    setLoginPwd("");
+    setAuthError("");
+  };
+
+  // Form Submissions
+  const handleAddStudent = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!studentForm.nome || !studentForm.email) return;
 
     try {
-      const response = await fetch("/api/analysis/create", {
+      const res = await fetch("/api/academic/students", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(studentForm)
+      });
+
+      if (res.ok) {
+        setStudentFormSuccess(true);
+        setStudentForm({
+          nome: "",
+          email: "",
+          cpf: "",
+          dataNascimento: "",
+          turmaId: "turma-3a",
+          nomeResponsavel: "",
+          contatoResponsavel: ""
+        });
+        loadAcademicData();
+        setTimeout(() => setStudentFormSuccess(false), 3000);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleDeleteStudent = async (id: string) => {
+    if (!window.confirm("Deseja realmente remover esta matrícula de aluno?")) return;
+    try {
+      const res = await fetch(`/api/academic/student/${id}`, { method: "DELETE" });
+      if (res.ok) {
+        loadAcademicData();
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleGradeSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      const res = await fetch("/api/academic/grades/submit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(gradeForm)
+      });
+
+      if (res.ok) {
+        setGradeFormSuccess(true);
+        fetchSelectedStudentBoletim(gradeForm.alunoId);
+        setTimeout(() => setGradeFormSuccess(false), 3500);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleNoticeSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      const res = await fetch("/api/academic/notices", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          imageBase64: imagePayload,
-          latitude: gpsCoords.lat,
-          longitude: gpsCoords.lng,
-          userId: currentUser?.id || "user-1",
-          presetId: presetRefValue
+          ...noticeForm,
+          autor: loggedInUser ? loggedInUser.name : "Coordenador"
         })
       });
 
-      if (!response.ok) {
-        const errData = await response.json();
-        throw new Error(errData.error || "Houve uma instabilidade no processador de Visão.");
-      }
-
-      const report: Analysis = await response.json();
-      setCurrentAnalysis(report);
-      
-      // Atualizar lista local de análises
-      setAnalyses(prev => [report, ...prev]);
-      
-      // Ir para tela de resultado
-      setMobileScreen("result");
-    } catch (err: any) {
-      setAnalysisError(err.message || "Falha na conexão de inteligência geotécnica.");
-    } finally {
-      setIsAnalyzing(false);
-    }
-  };
-
-  // Auth Submitters
-  const handleLoginSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    setAuthError("");
-    
-    // Simulação rápida para propósitos do MVP
-    const match = usersDbSimulated().find(
-      u => u.email.toLowerCase() === loginEmail.toLowerCase() && loginPwd === "123"
-    );
-
-    if (match || (loginEmail === "simoncassua@gmail.com" && loginPwd === "123")) {
-      setCurrentUser({
-        id: "user-1",
-        name: "Eng. Gabriel Silva",
-        email: loginEmail,
-        phone: "+55 (11) 98888-7777"
-      });
-      setMobileScreen("dashboard");
-    } else {
-      setAuthError("Dados incorretos ou não cadastrados. Dica: Use simoncassua@gmail.com e senha 123");
-    }
-  };
-
-  const handleRegisterSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    setAuthError("");
-
-    if (!regName || !regEmail || !regPwd) {
-      setAuthError("Nome, e-mail e senha são obrigatórios.");
-      return;
-    }
-
-    setCurrentUser({
-      id: `user-${Date.now()}`,
-      name: regName,
-      email: regEmail,
-      phone: regPhone || "+55 (11) 99999-9999"
-    });
-    setMobileScreen("dashboard");
-  };
-
-  const handleUpdateProfile = (e: React.FormEvent) => {
-    e.preventDefault();
-    setProfileSuccess(false);
-
-    if (currentUser) {
-      setCurrentUser({
-        ...currentUser,
-        name: profileName,
-        phone: profilePhone
-      });
-      setProfileSuccess(true);
-      setTimeout(() => setProfileSuccess(false), 3000);
-    }
-  };
-
-  // Delete specific geological report
-  const handleDeleteAnalysis = async (id: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    try {
-      const res = await fetch(`/api/analysis/${id}`, { method: "DELETE" });
       if (res.ok) {
-        setAnalyses(prev => prev.filter(item => item.id !== id));
-        if (currentAnalysis?.id === id) {
-          setCurrentAnalysis(null);
-        }
+        setNoticeFormSuccess(true);
+        setNoticeForm({ titulo: "", conteudo: "", destinatario: "Todos", categoria: "Geral" });
+        loadAcademicData();
+        setTimeout(() => setNoticeFormSuccess(false), 3000);
       }
     } catch (e) {
-      console.error("Falha ao excluir registro:", e);
+      console.error(e);
     }
   };
 
-  // Totalized statistics helper calculations
-  const totalAnalyses = analyses.length;
-  const highViabilityCount = analyses.filter(a => a.score >= 80).length;
-  const moderateViabilityCount = analyses.filter(a => a.score >= 50 && a.score < 80).length;
-  const inadequateCount = analyses.filter(a => a.score < 50).length;
-  const averageScore = totalAnalyses > 0 ? Math.round(analyses.reduce((sum, a) => sum + a.score, 0) / totalAnalyses) : 0;
-
-  // Static fallback list for quick sandbox usage
-  function usersDbSimulated() {
-    return [
-      { id: "user-1", name: "Eng. Gabriel Silva", email: "simoncassua@gmail.com" }
-    ];
-  }
+  // Filtragem da lista para administrador
+  const filteredStudents = students.filter(s => 
+    s.nome.toLowerCase().includes(studentSearch.toLowerCase()) ||
+    s.matricula.toLowerCase().includes(studentSearch.toLowerCase())
+  );
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 font-sans selection:bg-emerald-500 selection:text-white pb-12">
-      {/* Top Header Workspace */}
-      <header className="bg-slate-900/80 backdrop-blur-md border-b border-slate-800 sticky top-0 z-40 px-6 py-4">
-        <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-xl bg-gradient-to-tr from-emerald-600 to-teal-400 p-0.5 shadow-lg shadow-emerald-500/10 flex items-center justify-center">
-              <div className="h-full w-full bg-slate-950 rounded-[10px] flex items-center justify-center">
-                <Compass className="h-5 w-5 text-emerald-400 animate-spin-slow" />
-              </div>
+    <div className="min-h-screen bg-slate-50 flex flex-col font-sans text-slate-800">
+      {/* HEADER PRINCIPAL */}
+      <header className="sticky top-0 z-50 bg-white border-b border-slate-200/85 shadow-sm">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3.5 flex flex-wrap items-center justify-between gap-4">
+          
+          {/* Logo / Brand */}
+          <div className="flex items-center gap-3 cursor-pointer" onClick={() => setActiveSection("public")}>
+            <div className="h-10 w-10 bg-indigo-650 rounded-xl flex items-center justify-center text-white shadow-md shadow-indigo-600/10">
+              <School className="h-5.5 w-5.5" />
             </div>
             <div>
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-bold tracking-widest bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded-full uppercase">Geotech AI</span>
-                <span className="text-xs text-slate-400">v1.2.0 • Pro</span>
-              </div>
-              <h1 className="text-xl font-black text-slate-100 tracking-tight">GeoBuild Vision™</h1>
+              <span className="text-lg font-extrabold text-indigo-900 tracking-tight block">
+                COLÉGIO EXEMPLAR
+              </span>
+              <span className="text-[10px] font-bold text-emerald-650 uppercase tracking-widest block -mt-1">
+                Portal Intelectual IA
+              </span>
             </div>
           </div>
 
-          <div className="flex items-center gap-4">
-            <div className="text-right hidden sm:block">
-              <p className="text-xs text-slate-400">Engenheiro Logado</p>
-              <p className="text-xs text-emerald-400 font-semibold">{currentUser ? currentUser.name : "Visitante"}</p>
-            </div>
-            <div className="h-8 w-px bg-slate-800 hidden sm:block"></div>
-            <a 
-              href="#app-simulator" 
-              className="px-4 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs rounded-lg transition-all flex items-center gap-1.5 shadow-lg shadow-emerald-500/20"
+          {/* Core Navigation Selector */}
+          <nav className="flex space-x-1.5 bg-slate-100 p-1 rounded-xl">
+            <button
+              onClick={() => setActiveSection("public")}
+              className={`px-4 py-2 text-xs font-semibold rounded-lg transition-all ${
+                activeSection === "public"
+                  ? "bg-white text-indigo-750 shadow-sm"
+                  : "text-slate-500 hover:text-slate-800"
+              }`}
             >
-              <Smartphone className="h-3.5 w-3.5" />
-              Testar Simulator
-            </a>
+              <School className="h-3.5 w-3.5 inline mr-1.5 -mt-0.5" />
+              Institucional
+            </button>
+            <button
+              onClick={() => {
+                setActiveSection("portal");
+                if (loggedInUser) {
+                  // Restaurar view correta
+                  if (loggedInUser.role === "admin") setPortalView("admin");
+                  else if (loggedInUser.role === "teacher") setPortalView("teacher");
+                  else setPortalView("student");
+                } else {
+                  setPortalView("login");
+                }
+              }}
+              className={`px-4 py-2 text-xs font-semibold rounded-lg transition-all ${
+                activeSection === "portal"
+                  ? "bg-white text-indigo-750 shadow-sm"
+                  : "text-slate-500 hover:text-slate-800"
+              }`}
+            >
+              <Users className="h-3.5 w-3.5 inline mr-1.5 -mt-0.5" />
+              Painel Escolar
+            </button>
+            <button
+              onClick={() => setActiveSection("techHub")}
+              className={`px-4 py-2 text-xs font-semibold rounded-lg transition-all ${
+                activeSection === "techHub"
+                  ? "bg-white text-indigo-750 shadow-sm"
+                  : "text-slate-500 hover:text-slate-800"
+              }`}
+            >
+              <BookOpen className="h-3.5 w-3.5 inline mr-1.5 -mt-0.5" />
+              Portal do Desenvolvedor
+            </button>
+          </nav>
+
+          {/* Quick Actions / Log Status */}
+          <div className="flex items-center gap-3">
+            {loggedInUser ? (
+              <div className="flex items-center gap-3 pl-3 border-l border-slate-200">
+                <div className="text-right hidden sm:block">
+                  <p className="text-xs font-bold text-slate-800">{loggedInUser.name}</p>
+                  <p className="text-[10px] text-slate-400 capitalize">{loggedInUser.role}</p>
+                </div>
+                <button
+                  onClick={handleLogout}
+                  className="px-3.5 py-1.5 text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 active:bg-slate-100 rounded-lg transition"
+                >
+                  Sair
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={() => { setActiveSection("portal"); setPortalView("login"); }}
+                className="px-4 py-2 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-600 rounded-lg shadow-sm transition"
+              >
+                Acessar Área Restrita
+              </button>
+            )}
           </div>
+
         </div>
       </header>
 
-      {/* Main Dual Grid Core Workspace layout */}
-      <main className="max-w-7xl mx-auto px-4 md:px-6 pt-8 grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+      {/* VIEW PRINCIPAL DO CONTEÚDO */}
+      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
         
-        {/* LEFT COLUMN: INTERACTIVE MOBILE WRAPPER AND INFO PANEL (5 COLS) */}
-        <section id="app-simulator" className="lg:col-span-5 space-y-6">
-          <div className="bg-slate-900 border border-slate-800/80 rounded-3xl p-6 relative overflow-hidden shadow-2xl">
-            <div className="absolute top-0 right-0 w-64 h-64 bg-emerald-500/5 rounded-full blur-3xl -mr-32 -mt-32"></div>
+        {/* ======================= SECTION 1: PUBLIC INSTITUTIONAL PAGE ======================= */}
+        {activeSection === "public" && (
+          <div className="space-y-12">
             
-            <div className="flex items-center justify-between mb-4 pb-4 border-b border-slate-800">
-              <div className="flex items-center gap-2">
-                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                <h3 className="text-sm font-bold text-slate-200">Dispositivo Móvel [iOS/Android Mock]</h3>
-              </div>
-              <p className="text-[11px] font-mono text-slate-400 bg-slate-800/60 px-2 py-0.5 rounded">
-                Preview em Tempo Real
-              </p>
-            </div>
-
-            {/* Smart Phone Simulator Shell */}
-            <div className="w-full max-w-[360px] mx-auto bg-slate-950 border-8 border-slate-800 rounded-[40px] shadow-2xl relative overflow-hidden flex flex-col min-h-[640px] max-h-[680px]">
-              {/* iPhone Notch Speaker */}
-              <div className="absolute top-0 left-1/2 -translate-x-1/2 w-40 h-6 bg-slate-800 rounded-b-2xl z-30 flex items-center justify-center gap-2">
-                <span className="w-12 h-1 bg-slate-900 rounded"></span>
-                <span className="w-2.5 h-2.5 rounded-full bg-slate-950 border border-slate-900"></span>
+            {/* Hero Banner Section */}
+            <div className="relative bg-slate-900 rounded-3xl overflow-hidden p-8 md:p-16 flex flex-col md:flex-row items-center justify-between gap-10 shadow-xl border border-slate-850">
+              <div className="absolute inset-0 opacity-15 overflow-hidden">
+                {/* Geométricos sutis decorativos */}
+                <div className="absolute -top-1/4 -right-1/4 w-96 h-96 bg-indigo-550 rounded-full blur-3xl"></div>
+                <div className="absolute -bottom-1/4 -left-1/4 w-96 h-96 bg-emerald-550 rounded-full blur-3xl"></div>
               </div>
 
-              {/* Simulated Device Top Bar Indicator */}
-              <div className="h-8 bg-slate-900 flex justify-between items-center px-6 pt-2.5 text-[10px] font-semibold text-slate-400 select-none z-20">
-                <span>09:41</span>
-                <div className="flex items-center gap-1.5">
-                  <span className="text-[9px]">4G/LTE</span>
-                  <Compass className="h-2.5 w-2.5 animate-spin-slow text-emerald-400" />
-                  <span className="w-4 h-2.5 border border-slate-500 rounded-sm p-0.5 flex">
-                    <span className="w-full h-full bg-emerald-400 rounded-2xs"></span>
-                  </span>
+              <div className="relative z-10 max-w-xl space-y-6">
+                <span className="px-3.5 py-1.5 text-[10px] font-bold text-indigo-200 bg-indigo-500/20 border border-indigo-500/30 rounded-full uppercase tracking-wider">
+                  Matrículas Abertas Letivo 2026
+                </span>
+                <h1 className="text-4xl md:text-5xl font-extrabold text-white tracking-tight leading-tight">
+                  Formação de Excelência da <span className="text-indigo-400">Infância</span> à Preparação <span className="text-emerald-450">Global</span>.
+                </h1>
+                <p className="text-slate-350 text-base leading-relaxed">
+                  Tradição de colégio de elite aliada aos mais inovadores laboratórios de tecnologia de software, robótica aplicada e acompanhamento pedagógico individualizado permanente.
+                </p>
+
+                <div className="flex flex-wrap gap-3.5 pt-2">
+                  <button
+                    onClick={() => { setActiveSection("portal"); setPortalView("login"); }}
+                    className="px-5 py-3 text-sm font-bold text-slate-950 bg-emerald-400 hover:bg-emerald-350 active:bg-emerald-400 rounded-xl transition flex items-center gap-2 shadow-lg shadow-emerald-400/20"
+                  >
+                    <span>Entrar no Portal do Aluno</span>
+                    <ArrowRight className="h-4 w-4" />
+                  </button>
+                  <a
+                    href="/api/report/docx"
+                    download="Projeto_Pedagogico_Colegio_Exemplar_2026.docx"
+                    className="px-5 py-3 text-sm font-bold text-white bg-slate-800 hover:bg-slate-750 active:bg-slate-800 rounded-xl transition flex items-center gap-2 border border-slate-700"
+                  >
+                    <Download className="h-4 w-4 text-emerald-400" />
+                    <span>Baixar Projeto Pedagógico (DOCX)</span>
+                  </a>
                 </div>
               </div>
 
-              {/* ACTIVE MOBILE FRAME ROUTER VIEWPORT */}
-              <div className="flex-1 overflow-y-auto bg-slate-950 flex flex-col relative text-slate-200 text-sm">
-                
-                {/* 1. SPLASH SCREEN */}
-                {mobileScreen === "splash" && (
-                  <div className="flex-1 flex flex-col items-center justify-center bg-gradient-to-b from-slate-900 to-slate-950 p-6 text-center animate-fade-in">
-                    <div className="h-20 w-20 rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-400 p-0.5 shadow-xl shadow-emerald-500/10 mb-5 flex items-center justify-center">
-                      <div className="h-full w-full bg-slate-950 rounded-[14px] flex items-center justify-center">
-                        <Compass className="h-9 w-9 text-emerald-400 animate-spin-slow" />
-                      </div>
+              <div className="relative z-10 w-full md:w-auto flex-shrink-0 flex justify-center">
+                <div className="relative max-w-xs w-full bg-slate-850/80 backdrop-blur border border-slate-750 rounded-2xl p-6 shadow-2xl">
+                  {/* Foto Ilustrativa de Escola de Altíssimo Nível */}
+                  <img
+                    alt="Colegio"
+                    referrerPolicy="no-referrer"
+                    src="https://images.unsplash.com/photo-1427504494785-3a9ca7044f45?auto=format&fit=crop&w=400&q=80"
+                    className="w-full h-44 object-cover rounded-xl border border-slate-700"
+                  />
+                  <div className="mt-4 space-y-2">
+                    <p className="text-xs text-indigo-455 font-bold uppercase tracking-wider">Unidade São Paulo Centro</p>
+                    <p className="text-sm font-bold text-white">Campus Unificado de Especialização</p>
+                    <div className="flex items-center gap-2 text-[11px] text-slate-400">
+                      <MapPin className="h-3 w-3 text-emerald-400" />
+                      <span>Al. Jaú, 1044 - Jardim Paulista</span>
                     </div>
-                    <h2 className="text-xl font-black text-white tracking-widest uppercase">GeoBuild Vision</h2>
-                    <p className="text-xs text-emerald-400 mt-1.5 font-semibold tracking-wider">AI TERRAIN ASSESSMENT</p>
-                    <div className="mt-12 flex justify-center">
-                      <div className="w-6 h-6 border-2 border-emerald-500/20 border-t-emerald-400 rounded-full animate-spin"></div>
-                    </div>
-                    <p className="text-[10px] text-slate-500 mt-24">Processamento em Nuvem e Visão Computacional</p>
                   </div>
-                )}
+                </div>
+              </div>
+            </div>
 
-                {/* 2. LOGIN SCREEN */}
-                {mobileScreen === "login" && (
-                  <div className="flex-1 flex flex-col justify-between p-6">
-                    <div className="mt-6">
-                      <h3 className="text-lg font-black text-slate-100 flex items-center gap-1">
-                        Olá Engenheiro!
-                      </h3>
-                      <p className="text-xs text-slate-400 mt-1">Insira suas credenciais corporativas de acesso ao GeoBuild.</p>
-                      
-                      {authError && (
-                        <div className="mt-4 p-2.5 bg-rose-500/10 border border-rose-500/20 rounded-lg text-rose-400 text-xs flex gap-1.5 items-start">
-                          <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
-                          <span>{authError}</span>
-                        </div>
-                      )}
+            {/* School Metrics Row */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+              {[
+                { value: "100%", label: "Aprovação no Vestibular", desc: "Resultados comprovados", icon: Award, color: "text-indigo-650" },
+                { value: "1.200+", label: "Alunos Registrados", desc: "No fundamental e médio", icon: Users, color: "text-sky-500" },
+                { value: "35", label: "Professores Mestres", desc: "Equipe especializada", icon: GraduationCap, color: "text-emerald-500" },
+                { value: "15", label: "Laboratórios Conectados", desc: "Tecnologia de ponta", icon: BookOpen, color: "text-pink-500" }
+              ].map((item, i) => (
+                <div key={i} className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-1">
+                  <div className="p-2.5 rounded-lg bg-slate-50 w-fit">
+                    <item.icon className={`h-5 w-5 ${item.color}`} />
+                  </div>
+                  <p className="text-2xl font-extrabold text-slate-900 mt-2">{item.value}</p>
+                  <p className="text-xs font-bold text-slate-850">{item.label}</p>
+                  <p className="text-[10px] text-slate-400">{item.desc}</p>
+                </div>
+              ))}
+            </div>
 
-                      <form onSubmit={handleLoginSubmit} className="mt-6 space-y-4">
-                        <div>
-                          <label className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">E-mail corporativo</label>
-                          <input 
-                            type="email" 
-                            required
-                            value={loginEmail}
-                            onChange={(e) => setLoginEmail(e.target.value)}
-                            placeholder="ex: simoncassua@gmail.com"
-                            className="w-full mt-1 px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-xs font-medium text-slate-100 placeholder-slate-600 focus:outline-none focus:border-emerald-500"
-                          />
-                        </div>
+            {/* Educational Segments / Cards Section */}
+            <div className="space-y-4">
+              <div className="text-center max-w-xl mx-auto space-y-1.5">
+                <h2 className="text-2xl font-extrabold text-slate-950 tracking-tight">Nossos Segmentos de Ensino</h2>
+                <p className="text-sm text-slate-500">Desenvolvimento com metodologias específicas em todas as fases da vida escolar.</p>
+              </div>
 
-                        <div>
-                          <label className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Senha Secreta</label>
-                          <input 
-                            type="password" 
-                            required
-                            value={loginPwd}
-                            onChange={(e) => setLoginPwd(e.target.value)}
-                            placeholder="Insira sua senha"
-                            className="w-full mt-1 px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-xs font-medium text-slate-100 placeholder-slate-600 focus:outline-none focus:border-emerald-500"
-                          />
-                        </div>
-
-                        <button 
-                          type="submit"
-                          className="w-full py-2.5 mt-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-lg text-xs transition flex items-center justify-center gap-1"
-                        >
-                          Entrar no App
-                          <ArrowRight className="h-3.5 w-3.5" />
-                        </button>
-                      </form>
-                    </div>
-
-                    <div className="text-center pt-4 border-t border-slate-900">
-                      <p className="text-xs text-slate-400">
-                        Não possui credencial?{" "}
-                        <button 
-                          onClick={() => setMobileScreen("register")} 
-                          className="text-emerald-400 font-bold hover:underline"
-                        >
-                          Cadastre-se
-                        </button>
-                      </p>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                {[
+                  { title: "Ensino Fundamental II", desc: "Do 6º ao 9º ano. Consolidação dos hábitos de estudo sistemático e iniciação científica prática.", cover: "https://images.unsplash.com/photo-1544717297-fa95b6ee9643?auto=format&fit=crop&w=350&q=85" },
+                  { title: "Ensino Médio e Itinerários", desc: "Preparo robusto para as principais universidades, olimpíadas acadêmicas e trilhas em programação de computadores.", cover: "https://images.unsplash.com/photo-1516321318423-f06f85e504b3?auto=format&fit=crop&w=350&q=85" },
+                  { title: "Vestibular e Formação Global", desc: "Aprofundamento de conteúdos vestibulares de excelência na unidade técnica de suporte extensivo pós-aula.", cover: "https://images.unsplash.com/photo-1523050854058-8df90110c9f1?auto=format&fit=crop&w=350&q=85" }
+                ].map((seg, idx) => (
+                  <div key={idx} className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition">
+                    <img src={seg.cover} alt={seg.title} className="w-full h-40 object-cover border-b border-sidebar-divider" />
+                    <div className="p-5 space-y-2">
+                      <h3 className="text-base font-bold text-slate-900">{seg.title}</h3>
+                      <p className="text-xs text-slate-500 leading-relaxed">{seg.desc}</p>
                       <button 
-                        onClick={() => setMobileScreen("dashboard")} 
-                        className="text-[10px] text-slate-500 font-bold hover:text-slate-400 block w-full mt-2"
+                        onClick={() => { setActiveSection("portal"); setPortalView("login"); }}
+                        className="text-xs font-bold text-indigo-650 hover:text-indigo-800 flex items-center gap-1 cursor-pointer pt-2"
                       >
-                        Pular Login (Modo Demo)
+                        <span>Saber mais</span>
+                        <ChevronRight className="h-3 w-3" />
                       </button>
                     </div>
                   </div>
-                )}
+                ))}
+              </div>
+            </div>
 
-                {/* 3. REGISTER SCREEN */}
-                {mobileScreen === "register" && (
-                  <div className="flex-1 flex flex-col justify-between p-6 overflow-y-auto">
-                    <div>
-                      <h3 className="text-lg font-black text-slate-100">Criar Nova Conta</h3>
-                      <p className="text-xs text-slate-400 mt-1">Crie sua conta para salvar relatórios de terrenos de obras.</p>
+            {/* School Latest Board (Comunicados) */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+              
+              {/* Notice list */}
+              <div className="lg:col-span-2 bg-white border border-slate-200 rounded-2xl p-6 space-y-4">
+                <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                  <h3 className="text-base font-bold text-indigo-900 flex items-center gap-2">
+                    <Bell className="h-4.5 w-4.5 text-indigo-600" />
+                    Mural de Comunicados Oficiais
+                  </h3>
+                  <span className="text-[10px] bg-slate-100 px-2 py-0.5 rounded-full font-semibold text-slate-500">Atualizado</span>
+                </div>
 
-                      {authError && (
-                        <div className="mt-4 p-2 bg-rose-500/10 border border-rose-500/20 rounded-lg text-rose-400 text-xs">
-                          {authError}
-                        </div>
-                      )}
-
-                      <form onSubmit={handleRegisterSubmit} className="mt-4 space-y-3">
-                        <div>
-                          <label className="text-[9px] uppercase font-bold text-slate-400">Nome Completo</label>
-                          <input 
-                            type="text" 
-                            required 
-                            placeholder="Eng. Gabriel Silva"
-                            value={regName}
-                            onChange={(e) => setRegName(e.target.value)}
-                            className="w-full mt-1 px-3 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-xs focus:outline-none focus:border-emerald-500"
-                          />
-                        </div>
-
-                        <div>
-                          <label className="text-[9px] uppercase font-bold text-slate-400">E-mail Comercial</label>
-                          <input 
-                            type="email" 
-                            required 
-                            placeholder="nome@empresa.com"
-                            value={regEmail}
-                            onChange={(e) => setRegEmail(e.target.value)}
-                            className="w-full mt-1 px-3 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-xs focus:outline-none focus:border-emerald-500"
-                          />
-                        </div>
-
-                        <div>
-                          <label className="text-[9px] uppercase font-bold text-slate-400">Telefone / CREA</label>
-                          <input 
-                            type="text" 
-                            placeholder="+55 (11) 98888-7777"
-                            value={regPhone}
-                            onChange={(e) => setRegPhone(e.target.value)}
-                            className="w-full mt-1 px-3 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-xs focus:outline-none focus:border-emerald-500"
-                          />
-                        </div>
-
-                        <div>
-                          <label className="text-[9px] uppercase font-bold text-slate-400">Definir Senha</label>
-                          <input 
-                            type="password" 
-                            required 
-                            placeholder="Mínimo de 6 algarismos"
-                            value={regPwd}
-                            onChange={(e) => setRegPwd(e.target.value)}
-                            className="w-full mt-1 px-3 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-xs focus:outline-none focus:border-emerald-500"
-                          />
-                        </div>
-
-                        <button 
-                          type="submit"
-                          className="w-full py-2 bg-emerald-500 text-slate-950 font-bold rounded-lg text-xs transition mt-2"
-                        >
-                          Concluir Registro
-                        </button>
-                      </form>
-                    </div>
-
-                    <div className="text-center pt-3 border-t border-slate-900 mt-4">
-                      <p className="text-xs text-slate-400">
-                        Já tem conta?{" "}
-                        <button 
-                          onClick={() => setMobileScreen("login")} 
-                          className="text-emerald-400 font-bold hover:underline"
-                        >
-                          Acesse sua conta
-                        </button>
-                      </p>
-                    </div>
-                  </div>
-                )}
-
-                {/* 4. DASHBOARD */}
-                {mobileScreen === "dashboard" && (
-                  <div className="flex-1 flex flex-col justify-between p-4 overflow-y-auto">
-                    <div className="space-y-4">
-                      {/* Top Header Mock App bar */}
-                      <div className="flex items-center justify-between border-b border-slate-900 pb-3">
-                        <div>
-                          <p className="text-[10px] text-slate-500">Módulo Mobile Activo</p>
-                          <h4 className="font-bold text-slate-200">Visão Geral GeoBuild</h4>
-                        </div>
-                        <button 
-                          onClick={() => setMobileScreen("profile")}
-                          className="h-8 w-8 rounded-full bg-slate-800 hover:bg-slate-700 flex items-center justify-center border border-slate-700"
-                          title="Ver Perfil"
-                        >
-                          <User className="h-4 w-4 text-emerald-400" />
-                        </button>
-                      </div>
-
-                      {/* Summary Banner Stats */}
-                      <div className="bg-gradient-to-tr from-emerald-950/40 to-slate-900 p-3 rounded-xl border border-emerald-900/40">
-                        <p className="text-[10px] uppercase font-bold text-emerald-400">Estatísticas Geológicas</p>
-                        <div className="grid grid-cols-2 gap-2 mt-2">
-                          <div>
-                            <span className="text-xl font-bold block text-slate-100">{totalAnalyses}</span>
-                            <span className="text-[9px] text-slate-400">Total Analisados</span>
-                          </div>
-                          <div>
-                            <span className="text-xl font-bold block text-emerald-400">{averageScore}%</span>
-                            <span className="text-[9px] text-slate-400">Média Sanitária</span>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Quick launch interactive photo button */}
-                      <button 
-                        onClick={() => {
-                          triggerGPS();
-                          setMobileScreen("camera");
-                        }}
-                        className="w-full py-3 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-black rounded-xl text-xs flex items-center justify-center gap-1.5 shadow-lg shadow-emerald-500/10"
-                      >
-                        <Camera className="h-4 w-4" />
-                        NOVA ANÁLISE DE TERRENO
-                      </button>
-
-                      {/* List header */}
-                      <div className="flex items-center justify-between pt-2">
-                        <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Últimos Terrenos {totalAnalyses > 0 && `(${totalAnalyses})`}</span>
-                        <button 
-                          onClick={() => setMobileScreen("history")}
-                          className="text-[10px] text-emerald-400 font-bold hover:underline"
-                        >
-                          Ver Todos
-                        </button>
-                      </div>
-
-                      {/* Tiny horizontal card lists */}
-                      <div className="space-y-2">
-                        {loadingHistory ? (
-                          <div className="py-6 text-center text-slate-500 text-xs">Atualizando histórico...</div>
-                        ) : analyses.length === 0 ? (
-                          <div className="py-8 text-center border border-dashed border-slate-900 rounded-xl bg-slate-950/20 p-4">
-                            <Info className="h-5 w-5 text-slate-600 mx-auto mb-1.5" />
-                            <p className="text-xs text-slate-400">Nenhum terreno fotografado ainda.</p>
-                            <span className="text-[10px] text-slate-500">Toque no botão e inicie capturas automatizadas.</span>
-                          </div>
-                        ) : (
-                          analyses.slice(0, 3).map((item) => (
-                            <div 
-                              key={item.id}
-                              onClick={() => {
-                                setCurrentAnalysis(item);
-                                setMobileScreen("result");
-                              }}
-                              className="p-2.5 bg-slate-900 hover:bg-slate-800/80 rounded-xl border border-slate-800/60 flex items-center gap-3 transition cursor-pointer group"
-                            >
-                              <img 
-                                src={item.image_url} 
-                                alt="terreno" 
-                                className="w-10 h-10 rounded-lg object-cover bg-slate-800 shrink-0"
-                              />
-                              <div className="min-w-0 flex-1">
-                                <div className="flex items-center justify-between">
-                                  <span className={`text-[8px] font-bold uppercase px-1.5 py-0.5 rounded-full ${
-                                    item.score >= 80 ? "bg-emerald-500/10 text-emerald-400" :
-                                    item.score >= 50 ? "bg-amber-500/10 text-amber-400" :
-                                    "bg-rose-500/10 text-rose-400"
-                                  }`}>
-                                    {item.classification === "Alta" ? "Alta Viabilidade" : item.classification === "Moderada" ? "Moderada" : "Inadequado"}
-                                  </span>
-                                  <span className="text-[8px] text-slate-500 font-mono">
-                                    {new Date(item.created_at).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })}
-                                  </span>
-                                </div>
-                                <h5 className="text-[11px] font-bold text-slate-200 truncate mt-0.5 mt-0.5 block">
-                                  Terreno {item.slope} • {item.soil_type}
-                                </h5>
-                                <p className="text-[9px] text-slate-400 flex items-center gap-0.5 truncate">
-                                  <MapPin className="h-2 w-2 text-rose-400 shrink-0" />
-                                  {item.latitude.toFixed(4)}, {item.longitude.toFixed(4)}
-                                </p>
-                              </div>
-                              <ChevronRight className="h-3.5 w-3.5 text-slate-600 group-hover:text-slate-400 transition" />
-                            </div>
-                          ))
-                        )}
-                      </div>
-
-                    </div>
-
-                    {/* App Bottom nav bar */}
-                    <div className="border-t border-slate-900 pt-3 flex justify-around mt-4">
-                      <button 
-                        onClick={() => setMobileScreen("dashboard")}
-                        className="flex flex-col items-center gap-1 text-emerald-400"
-                      >
-                        <Compass className="h-4 w-4" />
-                        <span className="text-[8px] font-semibold">Início</span>
-                      </button>
-                      <button 
-                        onClick={() => setMobileScreen("history")}
-                        className="flex flex-col items-center gap-1 text-slate-500 hover:text-slate-300 transition"
-                      >
-                        <FileText className="h-4 w-4" />
-                        <span className="text-[8px] font-semibold">Histórico</span>
-                      </button>
-                      <button 
-                        onClick={() => setMobileScreen("profile")}
-                        className="flex flex-col items-center gap-1 text-slate-500 hover:text-slate-300 transition"
-                      >
-                        <User className="h-4 w-4" />
-                        <span className="text-[8px] font-semibold">Ajustes</span>
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                {/* 5. CAMERA & UPLOAD FOR ASSESSMENT SCREEN */}
-                {mobileScreen === "camera" && (
-                  <div className="flex-1 flex flex-col justify-between p-4 bg-slate-950">
-                    <div className="space-y-4">
-                      {/* Back to Dashboard bar */}
-                      <div className="flex items-center justify-between border-b border-slate-900 pb-2">
-                        <button 
-                          onClick={() => setMobileScreen("dashboard")}
-                          className="text-xs text-slate-400 hover:text-white"
-                        >
-                          ← Voltar
-                        </button>
-                        <span className="text-xs font-bold">Capturar Imagem</span>
-                        <div className="w-8 h-8"></div>
-                      </div>
-
-                      {/* GPS coordinates simulated widget */}
-                      <div className="bg-slate-900 rounded-xl p-3 border border-slate-800 flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <MapPin className="h-4 w-4 text-emerald-400 shrink-0" />
-                          <div className="min-w-0">
-                            <span className="text-[9px] uppercase font-bold text-slate-500 block">GPS Integrado</span>
-                            <span className="text-xs font-mono text-slate-300 block truncate">
-                              LAT {gpsCoords.lat.toFixed(6)} | LNG {gpsCoords.lng.toFixed(6)}
-                            </span>
-                          </div>
-                        </div>
-
-                        <button 
-                          type="button"
-                          disabled={gettingLocation}
-                          onClick={triggerGPS}
-                          className="p-1 px-2.5 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 text-[10px] font-bold rounded-lg border border-emerald-500/20 transition shrink-0"
-                        >
-                          {gettingLocation ? "Buscando..." : "Atualizar"}
-                        </button>
-                      </div>
-
-                      {/* Tab toggle: Presets landscape vs Custom file upload */}
-                      <div className="bg-slate-900 p-0.5 rounded-lg flex border border-slate-850">
-                        <button
-                          type="button"
-                          onClick={() => setCustomFileBase64(null)}
-                          className={`flex-1 py-1 rounded-md text-[10px] font-bold text-center transition ${
-                            !customFileBase64 ? "bg-slate-800 text-white" : "text-slate-450 hover:text-white"
-                          }`}
-                        >
-                          Cenários Locais (Presets)
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            if (!customFileBase64) {
-                              // Trigger automatic preset mock structure
-                              setCustomFileBase64("https://images.unsplash.com/photo-1590069261209-f8e9b8642343?auto=format&fit=crop&w=400&q=80");
-                            }
-                          }}
-                          className={`flex-1 py-1 rounded-md text-[10px] font-bold text-center transition ${
-                            customFileBase64 ? "bg-slate-800 text-white" : "text-slate-450 hover:text-white"
-                          }`}
-                        >
-                          Enviar Minha Foto
-                        </button>
-                      </div>
-
-                      {/* Preset selector landscape blocks */}
-                      {!customFileBase64 ? (
-                        <div className="space-y-2">
-                          <span className="text-[10px] uppercase font-bold text-slate-500">Selecione o cenário do solo:</span>
-                          <div className="grid grid-cols-1 gap-2">
-                            {Object.entries(PRESET_MAPPING).map(([key, data]) => (
-                              <button
-                                key={key}
-                                type="button"
-                                onClick={() => setSelectedPreset(key)}
-                                className={`p-2 rounded-xl text-left border flex gap-3 transition ${
-                                  selectedPreset === key 
-                                    ? "bg-emerald-500/5 text-emerald-100 border-emerald-500/60" 
-                                    : "bg-slate-900 text-slate-300 border-slate-800 hover:border-slate-700"
-                                }`}
-                              >
-                                <img src={data.url} alt="preset preview" className="w-12 h-12 object-cover rounded-lg bg-slate-850" />
-                                <div className="min-w-0 flex-1">
-                                  <p className="text-xs font-bold block">{data.title}</p>
-                                  <p className="text-[9px] text-slate-400 leading-tight mt-0.5 truncate">{data.desc}</p>
-                                </div>
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="space-y-3">
-                          <span className="text-[10px] uppercase font-bold text-slate-500">Sua fotografia do terreno:</span>
-                          
-                          <div className="border border-dashed border-slate-800 bg-slate-900/40 p-4 rounded-xl text-center space-y-2 relative">
-                            <Upload className="h-6 w-6 text-emerald-400 mx-auto" />
-                            <p className="text-xs text-slate-300">Selecione uma imagem do seu rolo de câmera</p>
-                            <input 
-                              type="file" 
-                              accept="image/*"
-                              onChange={handleImageFileChange}
-                              className="w-full text-xs text-slate-400 file:mr-2 file:py-1 file:px-2 file:rounded file:border-0 file:text-[10px] file:font-semibold file:bg-slate-800 file:text-slate-300 hover:file:bg-slate-700 cursor-pointer"
-                            />
-                            {customFileName && (
-                              <p className="text-[10px] text-emerald-400 font-bold font-mono text-center">
-                                ✓ Carregado: {customFileName}
-                              </p>
-                            )}
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Display live terrain image in the camera preview */}
-                      <div className="bg-slate-900 rounded-xl overflow-hidden border border-slate-800">
-                        <div className="relative aspect-video">
-                          <img 
-                            src={customFileBase64 && customFileBase64.startsWith("data:") ? customFileBase64 : currentPresetData.url} 
-                            alt="Previsualização" 
-                            className="w-full h-full object-cover"
-                          />
-                          <div className="absolute top-2 left-2 bg-slate-950/80 backdrop-blur-md px-1.5 py-0.5 rounded text-[8px] font-mono text-slate-300 flex items-center gap-1">
-                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                            Live Viewfinder
-                          </div>
-                        </div>
-                      </div>
-
-                      {analysisError && (
-                        <div className="p-2 bg-rose-500/10 border border-rose-500/20 rounded-lg text-rose-400 text-xs">
-                          {analysisError}
-                        </div>
-                      )}
-
-                      {/* Large assess button */}
-                      <button
-                        type="button"
-                        onClick={handleStartAnalysis}
-                        disabled={isAnalyzing}
-                        className="w-full py-3 bg-gradient-to-r from-emerald-500 to-teal-500 text-slate-950 font-black rounded-xl text-xs flex items-center justify-center gap-2 transition active:scale-98 shadow-xl shadow-emerald-500/10 disabled:opacity-50"
-                      >
-                        {isAnalyzing ? (
-                          <>
-                            <RefreshCw className="h-4 w-4 animate-spin" />
-                            PROCESSANDO COMPILADOR IA...
-                          </>
-                        ) : (
-                          <>
-                            <Compass className="h-4 w-4 animate-spin-slow" />
-                            SUBMETER AO LAUDO DE IA
-                          </>
-                        )}
-                      </button>
-
-                    </div>
-                  </div>
-                )}
-
-                {/* 6. TECHNICAL ANALYSIS RESULTS REPORT CARD SCREEN */}
-                {mobileScreen === "result" && currentAnalysis && (
-                  <div className="flex-1 flex flex-col justify-between p-4 bg-slate-950 overflow-y-auto">
-                    <div className="space-y-4">
-                      {/* Nav header */}
-                      <div className="flex items-center justify-between border-b border-slate-900 pb-2">
-                        <button 
-                          onClick={() => setMobileScreen("dashboard")}
-                          className="text-xs text-slate-400 hover:text-white"
-                        >
-                          ← Painel
-                        </button>
-                        <span className="text-xs font-extrabold text-slate-100 uppercase tracking-widest">Relatório Técnico</span>
-                        <button
-                          onClick={(e) => {
-                            handleDeleteAnalysis(currentAnalysis.id, e);
-                            setMobileScreen("dashboard");
-                          }}
-                          className="text-slate-500 hover:text-rose-400 transition"
-                          title="Excluir Registro"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
-                      </div>
-
-                      {/* Image Thumbnail */}
-                      <div className="relative h-32 rounded-xl overflow-hidden border border-slate-800 object-cover shrink-0">
-                        <img 
-                          src={currentAnalysis.image_url} 
-                          alt="terreno analisado" 
-                          className="w-full h-full object-cover" 
-                        />
-                        <div className="absolute top-2 left-2 px-2 py-0.5 bg-slate-950/80 text-xs rounded-full border border-slate-800 text-[10px] font-mono text-slate-300">
-                          ID: {currentAnalysis.id.slice(0, 10)}...
-                        </div>
-                      </div>
-
-                      {/* Header Gauge indicator with numeric score */}
-                      <div className="bg-slate-900 p-4 rounded-xl border border-slate-850 flex items-center justify-between">
-                        <div>
-                          <p className="text-[10px] uppercase font-bold text-slate-500">Classificação Visual</p>
-                          <h4 className={`text-lg font-black mt-0.5 ${
-                            currentAnalysis.score >= 80 ? "text-emerald-400" :
-                            currentAnalysis.score >= 50 ? "text-amber-400" :
-                            "text-rose-400"
-                          }`}>
-                            {currentAnalysis.classification === "Alta" ? "Alta Viabilidade" : currentAnalysis.classification === "Moderada" ? "Viabilidade Moderada" : "Inadequado"}
-                          </h4>
-                          <span className="text-[9px] text-slate-400 mt-1 block">Avaliação Geomecânica Automática</span>
-                        </div>
-
-                        {/* Radial indicator numeric frame */}
-                        <div className="h-16 w-16 rounded-full border-4 border-slate-800 flex flex-col items-center justify-center relative">
-                          <span className={`text-lg font-black ${
-                            currentAnalysis.score >= 80 ? "text-emerald-400" :
-                            currentAnalysis.score >= 50 ? "text-amber-400" :
-                            "text-rose-400"
-                          }`}>{currentAnalysis.score}</span>
-                          <span className="text-[8px] text-slate-500 font-mono -mt-1">PONTOS</span>
-                          {/* Accent arc simulation */}
-                          <div className={`absolute -inset-1 border-2 rounded-full border-transparent animate-spin-slow ${
-                            currentAnalysis.score >= 80 ? "border-t-emerald-400 border-r-emerald-400/20" :
-                            currentAnalysis.score >= 50 ? "border-t-amber-400 border-r-amber-400/20" :
-                            "border-t-rose-500 border-r-rose-500/20"
-                          }`}></div>
-                        </div>
-                      </div>
-
-                      {/* Geotech analysis metric list breakdown */}
-                      <div className="space-y-2">
-                        <span className="text-[10px] uppercase font-bold text-slate-400">Parâmetros Microscópicos IA</span>
-                        
-                        <div className="grid grid-cols-2 gap-2 text-[11px]">
-                          <div className="bg-slate-900 p-2 rounded-lg border border-slate-800/60">
-                            <span className="text-slate-500 block text-[9px]">Morfologia</span>
-                            <span className="font-bold text-slate-200 mt-0.5 block">{currentAnalysis.slope} ({currentAnalysis.scores?.slope ?? 0} pont)</span>
-                          </div>
-                          <div className="bg-slate-900 p-2 rounded-lg border border-slate-800/60">
-                            <span className="text-slate-500 block text-[9px]">Solo Identificado</span>
-                            <span className="font-bold text-slate-200 mt-0.5 block">{currentAnalysis.soil_type}</span>
-                          </div>
-                          <div className="bg-slate-900 p-2 rounded-lg border border-slate-800/60">
-                            <span className="text-slate-500 block text-[9px]">Firmeza / Compacidade</span>
-                            <span className="font-bold text-slate-200 mt-0.5 block">{currentAnalysis.soil_firmness}</span>
-                          </div>
-                          <div className="bg-slate-900 p-2 rounded-lg border border-slate-800/60">
-                            <span className="text-slate-500 block text-[9px]">Erosões</span>
-                            <span className="font-bold text-slate-200 mt-0.5 block">{currentAnalysis.erosion}</span>
-                          </div>
-                          <div className="bg-slate-900 p-2 rounded-lg border border-slate-800/60">
-                            <span className="text-slate-500 block text-[9px]">Água Acumulada</span>
-                            <span className="font-bold text-slate-200 mt-0.5 block">{currentAnalysis.water_accumulation}</span>
-                          </div>
-                          <div className="bg-slate-900 p-2 rounded-lg border border-slate-800/60">
-                            <span className="text-slate-500 block text-[9px]">Acessibilidade Local</span>
-                            <span className="font-bold text-slate-200 mt-0.5 block">{currentAnalysis.accessibility}</span>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Tactical Recommendations listed and framed */}
-                      <div className="bg-slate-900 p-3 rounded-lg border border-emerald-900/30">
-                        <div className="flex items-center gap-1.5 mb-2">
-                          <CheckCircle className="h-4 w-4 text-emerald-400 shrink-0" />
-                          <h5 className="text-[10px] font-bold text-emerald-400 uppercase">Prelaudo & Diretrizes de Fundação</h5>
-                        </div>
-                        <ul className="space-y-1.5 text-[11px] text-slate-300">
-                          {currentAnalysis.recommendations && currentAnalysis.recommendations.map((rec, i) => (
-                            <li key={i} className="flex items-start gap-1">
-                              <span className="text-emerald-400 shrink-0 mt-0.5">•</span>
-                              <span>{rec}</span>
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-
-                      {/* Real-world Disclaimer banner */}
-                      <div className="p-2.5 bg-amber-500/5 border border-amber-500/20 rounded-lg flex gap-2 items-start text-[10px] text-amber-300 leading-tight">
-                        <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5 text-amber-400" />
-                        <span>
-                          <strong>Nota de Responsabilidade:</strong> Esta análise baseia-se em inteligência visual e não substitui os ensaios de campo de sondagem SPT ou relatórios de furos de sondagem geotécnica definitivos.
+                <div className="space-y-4 divider-y divide-slate-100">
+                  {notices.map((not, i) => (
+                    <div key={i} className="pt-3 first:pt-0 space-y-1.5">
+                      <div className="flex items-center gap-2">
+                        <span className={`px-2 py-0.5 text-[8.5px] font-bold rounded ${
+                          not.categoria === "Pedagógico" 
+                            ? "bg-emerald-100 text-emerald-800" 
+                            : not.categoria === "Financeiro" 
+                            ? "bg-amber-100 text-amber-800" 
+                            : "bg-indigo-100 text-indigo-800"
+                        }`}>
+                          {not.categoria}
                         </span>
+                        <span className="text-[9.5px] font-mono text-slate-400">
+                          {new Date(not.data).toLocaleDateString("pt-BR")}
+                        </span>
+                        <span className="text-[10px] text-slate-405 ml-auto">Para: <strong className="font-bold">{not.destinatario}</strong></span>
                       </div>
-
-                      {/* Download PDF corporativo via ReportLab / PDF Kit */}
-                      <a
-                        href={`/api/analysis/${currentAnalysis.id}/pdf`}
-                        download={`Relatorio_GeoBuild_${currentAnalysis.id}.pdf`}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="w-full py-2.5 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-black rounded-lg text-[10px] uppercase flex items-center justify-center gap-1.5 shadow-lg shadow-emerald-500/10 cursor-pointer mt-1"
-                      >
-                        <FileText className="h-3.5 w-3.5" />
-                        Baixar Relatório PDF Técnica (ReportLab)
-                      </a>
-
+                      <h4 className="text-sm font-bold text-slate-900">{not.titulo}</h4>
+                      <p className="text-xs text-slate-500 leading-relaxed">{not.conteudo}</p>
+                      <div className="text-[10px] text-slate-405 text-right italic">— Publicado por {not.autor}</div>
                     </div>
-                  </div>
-                )}
-
-                {/* 7. FULL HISTORICAL RECORDS SCREEN */}
-                {mobileScreen === "history" && (
-                  <div className="flex-1 flex flex-col justify-between p-4 bg-slate-950 overflow-y-auto">
-                    <div className="space-y-4">
-                      {/* Nav header */}
-                      <div className="flex items-center justify-between border-b border-slate-900 pb-2">
-                        <button 
-                          onClick={() => setMobileScreen("dashboard")}
-                          className="text-xs text-slate-400 hover:text-white"
-                        >
-                          ← Painel
-                        </button>
-                        <span className="text-xs font-bold text-slate-100 uppercase tracking-wider">Histórico Geológico</span>
-                        <div className="w-8 h-8"></div>
-                      </div>
-
-                      {/* Search box filters */}
-                      <input 
-                        type="text"
-                        placeholder="Pesquisar por tipo de solo ou inclinação..."
-                        value={historySearch}
-                        onChange={(e) => setHistorySearch(e.target.value)}
-                        className="w-full px-3 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-emerald-500"
-                      />
-
-                      {/* Loop elements */}
-                      <div className="space-y-2">
-                        {loadingHistory ? (
-                          <div className="text-center py-6 text-slate-500 text-xs">Atualizando banco...</div>
-                        ) : analyses.length === 0 ? (
-                          <div className="text-center py-8 text-slate-500 text-xs">Você não realizou nenhuma avaliação de terreno ainda.</div>
-                        ) : (
-                          analyses
-                            .filter(a => 
-                              a.slope.toLowerCase().includes(historySearch.toLowerCase()) || 
-                              a.soil_type.toLowerCase().includes(historySearch.toLowerCase()) || 
-                              a.classification.toLowerCase().includes(historySearch.toLowerCase())
-                            )
-                            .map((item) => (
-                              <div 
-                                key={item.id}
-                                onClick={() => {
-                                  setCurrentAnalysis(item);
-                                  setMobileScreen("result");
-                                }}
-                                className="p-3 bg-slate-900 hover:bg-slate-800 rounded-xl border border-slate-850 flex items-center gap-3 transition cursor-pointer group"
-                              >
-                                <img src={item.image_url} alt="terreno" className="w-12 h-12 rounded-lg object-cover shrink-0 bg-slate-800" />
-                                <div className="min-w-0 flex-1">
-                                  <div className="flex items-center justify-between">
-                                    <span className={`text-[8px] font-bold uppercase px-1.5 py-0.5 rounded-full ${
-                                      item.score >= 80 ? "bg-emerald-500/10 text-emerald-400" :
-                                      item.score >= 50 ? "bg-amber-500/10 text-amber-400" :
-                                      "bg-rose-500/10 text-rose-400"
-                                    }`}>
-                                      {item.classification === "Alta" ? "Alta" : item.classification === "Moderada" ? "Moderada" : "Inadequado"}
-                                    </span>
-                                    <span className="text-[9px] text-slate-500 font-mono">
-                                      {new Date(item.created_at).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })}
-                                    </span>
-                                  </div>
-                                  <h4 className="text-[11px] font-bold text-slate-200 mt-1 truncate block">
-                                    Terreno {item.slope} • {item.soil_type}
-                                  </h4>
-                                  <p className="text-[9px] text-slate-400 flex items-center gap-0.5 truncate">
-                                    <MapPin className="h-2 w-2 text-rose-400 shrink-0" />
-                                    {item.latitude.toFixed(4)}, {item.longitude.toFixed(4)}
-                                  </p>
-                                </div>
-                                <button
-                                  type="button"
-                                  onClick={(e) => handleDeleteAnalysis(item.id, e)}
-                                  className="p-1 px-1.5 text-slate-500 hover:text-rose-400 text-xs transition"
-                                >
-                                  <Trash2 className="h-3.5 w-3.5" />
-                                </button>
-                              </div>
-                            ))
-                        )}
-                      </div>
-
-                    </div>
-                  </div>
-                )}
-
-                {/* 8. PROFILE / SETTINGS SET UP SCREEN */}
-                {mobileScreen === "profile" && (
-                  <div className="flex-1 flex flex-col justify-between p-4 bg-slate-950 overflow-y-auto">
-                    <div className="space-y-4">
-                      {/* Nav header */}
-                      <div className="flex items-center justify-between border-b border-slate-900 pb-2">
-                        <button 
-                          onClick={() => setMobileScreen("dashboard")}
-                          className="text-xs text-slate-400 hover:text-white"
-                        >
-                          ← Painel
-                        </button>
-                        <span className="text-xs font-bold text-slate-100 uppercase tracking-wider">Ajustes & Perfil</span>
-                        <div className="w-8 h-8"></div>
-                      </div>
-
-                      {/* Current credentials details */}
-                      <div className="p-3 bg-slate-900 rounded-xl border border-slate-800 text-center">
-                        <div className="h-12 w-12 rounded-full bg-slate-800 border border-emerald-400/40 mx-auto flex items-center justify-center">
-                          <User className="h-6 w-6 text-emerald-400" />
-                        </div>
-                        <h4 className="text-sm font-bold mt-2 text-slate-100">{currentUser?.name || "Engenheiro Simulador"}</h4>
-                        <p className="text-[10px] text-emerald-400 font-medium tracking-wide">CREA-SP Ativo</p>
-                        <p className="text-[11px] text-slate-500 mt-1">{currentUser?.email || "simoncassua@gmail.com"}</p>
-                      </div>
-
-                      {profileSuccess && (
-                        <div className="p-2 bg-emerald-500/10 border border-emerald-500/20 rounded-lg text-emerald-400 text-xs text-center">
-                          Perfil atualizado com sucesso!
-                        </div>
-                      )}
-
-                      {/* Edit personal form settings */}
-                      <form onSubmit={handleUpdateProfile} className="space-y-3">
-                        <div>
-                          <label className="text-[9px] uppercase font-bold text-slate-400">Nome do Profissional</label>
-                          <input 
-                            type="text" 
-                            value={profileName}
-                            onChange={(e) => setProfileName(e.target.value)}
-                            className="w-full mt-1 px-3 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-xs text-slate-100 focus:outline-none focus:border-emerald-500"
-                          />
-                        </div>
-
-                        <div>
-                          <label className="text-[9px] uppercase font-bold text-slate-400">Contato Administrativo</label>
-                          <input 
-                            type="text" 
-                            value={profilePhone}
-                            onChange={(e) => setProfilePhone(e.target.value)}
-                            className="w-full mt-1 px-3 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-xs text-slate-100 focus:outline-none focus:border-emerald-500"
-                          />
-                        </div>
-
-                        <div>
-                          <label className="text-[9px] uppercase font-bold text-slate-400">Alterar Senha do App</label>
-                          <input 
-                            type="password" 
-                            value={profilePwd}
-                            onChange={(e) => setProfilePwd(e.target.value)}
-                            placeholder="Deixe em branco para manter a atual"
-                            className="w-full mt-1 px-3 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-xs text-slate-100 focus:outline-none focus:border-emerald-500"
-                          />
-                        </div>
-
-                        <button 
-                          type="submit"
-                          className="w-full py-2 bg-emerald-500 text-slate-950 font-bold rounded-lg text-xs font-semibold hover:bg-emerald-400 transition"
-                        >
-                          Salvar Alterações
-                        </button>
-                      </form>
-
-                      {/* Back logout action */}
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setCurrentUser(null);
-                          setMobileScreen("login");
-                        }}
-                        className="w-full py-1.5 border border-dashed border-rose-500/20 text-rose-400 text-xs hover:bg-rose-500/5 transition rounded-lg"
-                      >
-                        Encerrar Sessão
-                      </button>
-
-                    </div>
-                  </div>
-                )}
-
+                  ))}
+                </div>
               </div>
 
-              {/* Simulated Device Home Indicator pill */}
-              <div className="h-6 bg-slate-900 flex items-center justify-center select-none pb-1 z-20">
-                <span className="w-28 h-1 bg-slate-700 rounded-full cursor-pointer hover:bg-slate-500 transition" onClick={() => setMobileScreen("dashboard")}></span>
+              {/* Informações de Contato / Atendimento */}
+              <div className="bg-white border border-slate-200 rounded-2xl p-6 space-y-4">
+                <h3 className="text-base font-bold text-slate-900 flex items-center gap-2 border-b border-slate-100 pb-3">
+                  <Calendar className="h-4.5 w-4.5 text-indigo-650" />
+                  Atendimento Escolar
+                </h3>
+
+                <p className="text-xs text-slate-500 leading-relaxed">
+                  Para sanar dúvidas sobre boletins, matrículas presenciais ou suporte técnico da nossa plataforma inteligente, utilize nossos canais oficiais:
+                </p>
+
+                <div className="space-y-3 pt-2">
+                  <div className="flex items-start gap-2.5">
+                    <MapPin className="h-4 w-4 text-indigo-500 mt-0.5" />
+                    <div>
+                      <li className="list-none text-xs font-bold text-slate-800">Secretaria Unificada</li>
+                      <span className="text-[10px] text-slate-450 block">Atendimento Segunda a Sexta: 07:30 às 18:30</span>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-2.5">
+                    <Mail className="h-4 w-4 text-emerald-500 mt-0.5" />
+                    <div>
+                      <li className="list-none text-xs font-bold text-slate-800">Ouvidoria Geral</li>
+                      <span className="text-[10px] text-slate-450 block font-semibold text-indigo-650 hover:underline cursor-pointer">simoncassua@gmail.com</span>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-2.5">
+                    <Phone className="h-4 w-4 text-sky-500 mt-0.5" />
+                    <div>
+                      <li className="list-none text-xs font-bold text-slate-800">Telefone e WhatsApp</li>
+                      <span className="text-[10px] text-slate-450 block">+55 (11) 98888-7777</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Escola Digital Box */}
+                <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-2 mt-4">
+                  <p className="text-xs font-bold text-indigo-900 flex items-center gap-1.5 uppercase tracking-wider">
+                    <Shield className="h-3.5 w-3.5 text-indigo-500" />
+                    Acesso Seguro
+                  </p>
+                  <p className="text-[10.5px] text-slate-505 leading-normal">
+                    Seus dados acadêmicos e notas escolares são confidenciais e auditados sob a Lei Geral de Proteção de Dados (LGPD).
+                  </p>
+                </div>
               </div>
+
+            </div>
+
+          </div>
+        )}
+
+        {/* ======================= SECTION 2: PORTAL AREA (RESTRICTED) ======================= */}
+        {activeSection === "portal" && (
+          <div>
+            
+            {/* SCREEN 2.1: AUTHENTICATION / LOGIN FORM */}
+            {portalView === "login" && (
+              <div className="max-w-md mx-auto bg-white border border-slate-200 rounded-3xl overflow-hidden shadow-lg p-6 lg:p-8 space-y-6">
+                
+                {/* Auth Screen Header */}
+                <div className="text-center space-y-1.5">
+                  <div className="h-12 w-12 bg-indigo-55/60 rounded-full flex items-center justify-center text-indigo-600 mx-auto">
+                    <Lock className="h-5.5 w-5.5" />
+                  </div>
+                  <h2 className="text-xl font-extrabold text-slate-900 tracking-tight">
+                    Portal de Comunicação Escolar
+                  </h2>
+                  <p className="text-xs text-slate-500">
+                    Insira as credenciais acadêmicas de aluno, professor ou orientador.
+                  </p>
+                </div>
+
+                {/* Pre-configured Roles Helper Accordion (VERY RELEVANT UX FEATURE!) */}
+                <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-4 space-y-3">
+                  <p className="text-xs font-bold text-slate-700 flex items-center gap-1">
+                    <Award className="h-4 w-4 text-indigo-500" />
+                    Modo Avaliação Rápida (Clique para Logar):
+                  </p>
+                  <div className="grid grid-cols-1 gap-2">
+                    <button
+                      onClick={() => executeQuickLogin("student")}
+                      className="text-left px-3.5 py-2 text-xs font-semibold text-slate-800 bg-white hover:bg-indigo-50 hover:text-indigo-750 active:bg-slate-100 border border-slate-250 hover:border-indigo-250 rounded-xl transition flex items-center justify-between"
+                    >
+                      <span className="flex items-center gap-2">
+                        <User className="h-3.5 w-3.5 text-blue-500" />
+                        <span>Aluno: Ricardo Cassua (Boletim)</span>
+                      </span>
+                      <ChevronRight className="h-3 w-3 text-slate-450" />
+                    </button>
+
+                    <button
+                      onClick={() => executeQuickLogin("teacher")}
+                      className="text-left px-3.5 py-2 text-xs font-semibold text-slate-800 bg-white hover:bg-emerald-50 hover:text-emerald-850 active:bg-slate-100 border border-slate-250 hover:border-emerald-250 rounded-xl transition flex items-center justify-between"
+                    >
+                      <span className="flex items-center gap-2">
+                        <GraduationCap className="h-3.5 w-3.5 text-emerald-500" />
+                        <span>Professor: Lançar Notas / Mural</span>
+                      </span>
+                      <ChevronRight className="h-3 w-3 text-slate-455" />
+                    </button>
+
+                    <button
+                      onClick={() => executeQuickLogin("admin")}
+                      className="text-left px-3.5 py-2 text-xs font-semibold text-slate-800 bg-white hover:bg-violet-50 hover:text-violet-850 active:bg-slate-100 border border-slate-250 hover:border-violet-250 rounded-xl transition flex items-center justify-between"
+                    >
+                      <span className="flex items-center gap-2">
+                        <Shield className="h-3.5 w-3.5 text-violet-550" />
+                        <span>Admin/Coord: Matrículas / Estatísticas</span>
+                      </span>
+                      <ChevronRight className="h-3 w-3 text-slate-455" />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Form Input Submit */}
+                <form onSubmit={handleLogin} className="space-y-4">
+                  {authError && (
+                    <div className="p-3 text-xs font-bold text-red-808 bg-red-50 border border-red-200 rounded-xl">
+                      ❌ {authError}
+                    </div>
+                  )}
+
+                  <div className="space-y-1">
+                    <label className="text-xs font-bold text-slate-650">Identificação (E-mail)</label>
+                    <input
+                      type="email"
+                      required
+                      value={loginEmail}
+                      onChange={e => setLoginEmail(e.target.value)}
+                      placeholder="ex: aluno@exemplar.com"
+                      className="w-full px-3.5 py-2 bg-slate-50 border border-slate-250 focus:border-indigo-500 focus:bg-white rounded-xl text-sm transition outline-none"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-xs font-bold text-slate-650">Senha Digital</label>
+                    <input
+                      type="password"
+                      required
+                      value={loginPwd}
+                      onChange={e => setLoginPwd(e.target.value)}
+                      placeholder="Sua senha"
+                      className="w-full px-3.5 py-2 bg-slate-50 border border-slate-250 focus:border-indigo-500 focus:bg-white rounded-xl text-sm transition outline-none"
+                    />
+                  </div>
+
+                  <button
+                    type="submit"
+                    className="w-full py-2.5 text-sm font-bold text-white bg-indigo-650 hover:bg-indigo-600 active:bg-indigo-650 rounded-xl tracking-tight transition shadow-md shadow-indigo-600/10 cursor-pointer"
+                  >
+                    Efetuar Logon Seguro
+                  </button>
+                </form>
+              </div>
+            )}
+
+            {/* SCREEN 2.2: STUDENT / PARENT DASHBOARD */}
+            {loggedInUser && portalView === "student" && (
+              <StudentDashboard
+                loggedInUser={loggedInUser}
+                boletimLoading={boletimLoading}
+                studentBoletim={studentBoletim}
+                selectedStudentId={selectedStudentId}
+              />
+            )}
+
+            {/* SCREEN 2.3: TEACHER / DOCENTE DASHBOARD */}
+            {loggedInUser && portalView === "teacher" && (
+              <TeacherDashboard
+                students={students}
+                gradeForm={gradeForm}
+                setGradeForm={setGradeForm}
+                setSelectedStudentId={setSelectedStudentId}
+                gradeFormSuccess={gradeFormSuccess}
+                handleGradeSubmit={handleGradeSubmit}
+                selectedStudentId={selectedStudentId}
+                studentBoletim={studentBoletim}
+              />
+            )}
+
+            {/* SCREEN 2.4: EXECUTIVE COORDINATOR / ADMIN DASHBOARD */}
+            {loggedInUser && portalView === "admin" && (
+              <AdminDashboard
+                students={students}
+                teachers={teachers}
+                filteredStudents={filteredStudents}
+                studentSearch={studentSearch}
+                setStudentSearch={setStudentSearch}
+                setSelectedStudentId={setSelectedStudentId}
+                handleDeleteStudent={handleDeleteStudent}
+                studentFormSuccess={studentFormSuccess}
+                studentForm={studentForm}
+                setStudentForm={setStudentForm}
+                handleAddStudent={handleAddStudent}
+                noticeFormSuccess={noticeFormSuccess}
+                noticeForm={noticeForm}
+                setNoticeForm={setNoticeForm}
+                handleNoticeSubmit={handleNoticeSubmit}
+              />
+            )}
+
+          </div>
+        )}
+
+        {/* ======================= SECTION 3: DEVELOPER ARCHITECTURE WORKSPACE ======================= */}
+        {activeSection === "techHub" && (
+          <div className="space-y-6">
+            <div className="space-y-1.5">
+              <h2 className="text-2xl font-extrabold text-slate-900 tracking-tight flex items-center gap-2">
+                <GraduationCap className="h-6 w-6 text-indigo-650" />
+                Workspace e Repositório Escolar Multi-Plataforma
+              </h2>
+              <p className="text-sm text-slate-500 leading-relaxed max-w-3xl">
+                O Portal Colégio Exemplar foi concebido com altos padrões de design de software e escalabilidade. Confira as DDL do banco de dados relacional PostgreSQL, o software nativo mobile em Flutter do Aluno, a API rest em Python FastAPI e as regras descritas no guia de implantação.
+              </p>
+            </div>
+
+            {/* Renderizar componente de visualização de códigos */}
+            <div className="h-[600px] min-h-[500px]">
+              <DeveloperHub />
+            </div>
+          </div>
+        )}
+
+      </main>
+
+      {/* FOOTER DO APP */}
+      <footer className="bg-slate-900 border-t border-slate-850 mt-16 text-slate-400 py-10">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-8">
+          
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 border-b border-slate-800 pb-8">
+            <div className="space-y-1.5">
+              <p className="text-white font-extrabold text-md tracking-tight">COLÉGIO EXEMPLAR EDUCACIONAL</p>
+              <p className="text-xs text-slate-450 leading-relaxed max-w-md">
+                Metodologia inovadora para formar líderes pensadores atuantes na ciência e tecnologia cívico-global.
+              </p>
+            </div>
+            
+            <div className="flex flex-wrap gap-4 text-xs font-bold text-white">
+              <span className="hover:text-indigo-400 cursor-pointer transition" onClick={() => setActiveSection("public")}>Página Inicial</span>
+              <span className="hover:text-indigo-400 cursor-pointer transition" onClick={() => { setActiveSection("portal"); setPortalView("login"); }}>Boletim Online</span>
+              <span className="hover:text-indigo-400 cursor-pointer transition" onClick={() => setActiveSection("techHub")}>Arquitetura de Softwares</span>
+              <a href="/api/report/docx" className="hover:text-indigo-400 flex items-center gap-1 transition">
+                <span>Manual PDF DOCX</span>
+                <ExternalLink className="h-3.5 w-3.5" />
+              </a>
             </div>
           </div>
 
-          {/* Educational Geotechnical Information Card below simulator */}
-          <div className="bg-slate-900 border border-slate-800/80 rounded-2xl p-5 space-y-3 shadow-xl">
-            <h4 className="text-xs font-bold uppercase text-emerald-400 flex items-center gap-1">
-              <Info className="h-4 w-4" />
-              Como a IA realiza o escaneamento?
-            </h4>
-            <p className="text-xs text-slate-300 leading-relaxed">
-              Nosso algoritmo de visão computacional analisa múltiplos descritores visuais na imagem fornecida. Ela segmenta canais de coloração <strong>HSV (Hue-Saturation-Value)</strong> para identificar cobertura biológica (densidade de mato e supressão vegetal) e detecta reflexão/plenaridade de pixels para apontar focos de água ou empoçamento.
-            </p>
-            <p className="text-xs text-slate-300 leading-relaxed">
-              Através de filtros diferenciais de borda como <strong>Sobel operadores</strong> e <strong>Canny</strong>, ela depara-se com texturas que indicam declividades acentuadas, escorregamentos passados ou ranhuras indicadoras de processos de erosão e deslizamento.
-            </p>
+          <div className="flex flex-col sm:flex-row justify-between text-[11px] text-slate-500 gap-4">
+            <p>© 2026 Colégio Exemplar. Todos os direitos reservados. Conectado ao Portal Escolar de Notas e Frequência.</p>
+            <p>Criado e Assinado por Google's AI Coding Agent</p>
           </div>
-        </section>
 
-        {/* RIGHT COLUMN: DEVELOPER SOURCE HUB AND MANIFOLD (7 COLS) */}
-        <section className="lg:col-span-7 h-full flex flex-col lg:sticky lg:top-28">
-          <DeveloperHub />
-        </section>
-
-      </main>
+        </div>
+      </footer>
     </div>
   );
 }
