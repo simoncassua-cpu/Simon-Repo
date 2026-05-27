@@ -1,0 +1,6 @@
+{
+  "name": "GeoBuild Vision",
+  "description": "Plataforma de análise inteligente de terrenos para construção civil utilizando Inteligência Artificial, geolocalização e visão computacional.",
+  "requestFramePermissions": ["geolocation", "camera"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
